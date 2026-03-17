@@ -4,6 +4,7 @@ emoji: "🔐"
 type: "tech"
 topics: ["AWS", "Amplify", "Cognito", "SSO", "React", "TypeScript"]
 published: false
+publication_name: "trust"
 published_at: 2025-07-29
 ---
 

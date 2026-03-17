@@ -4,6 +4,7 @@ emoji: "🔎"
 type: "tech"
 topics: ["aws", "amplify", "dynamodb", "bedrock", "vectorsearch"]
 published: false
+publication_name: "trust"
 published_at: "2026-01-15"
 ---
 
