@@ -1,5 +1,5 @@
 ---
-title: "2025-07-29 Amplify Gen2とCognito Hosted UIで実現する！アプリ間SSOガイド"
+title: "Amplify Gen2とCognito Hosted UIで実現する！アプリ間SSOガイド"
 emoji: "🔐"
 type: "tech"
 topics: ["AWS", "Amplify", "Cognito", "SSO", "React", "TypeScript"]

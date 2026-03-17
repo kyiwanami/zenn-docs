@@ -79,7 +79,7 @@ src/components/
     - React Context などの状態管理ライブラリを使って、表示するコンポーネント（Figma版/MUI版）を切り替えるフラグを持たせます。
     - 開発環境用に、このフラグを切り替えるスイッチボタンなどを画面上に設置すると、新旧のUIを簡単に比較検証できて便利です。
 
-[実際の画面.mp4](https://note.com/api/v2/attachments/download/24a663f0f5c67b4229db38777f8c2ac1)
+https://youtu.be/a46zDA6LO6w
 
 **③効果的なCursorへの指示方法**
 
