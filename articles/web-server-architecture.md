@@ -11,26 +11,25 @@ topics:
 published: false
 published_at: 2026-06-21
 ---
-
-## いま Web サーバー構成をゼロから組んだ動機
+## いま Webサーバー構成をゼロから組んだ動機
 
 こんにちは。岩波と申します。
 
-私は新卒エンジニア 6 年目になりますが、自分で Web サーバー構成を組んだことがありませんでした。
+私は新卒エンジニア 6年目になりますが、自分で Webサーバー構成を組んだことがありませんでした。
 
-最初の 4 年半は、ECS Fargate 上の Spring Boot アプリ、Lambda、Step Functions、SQS といった AWS マネージドサービス上のワークロード設計と実装を続けてきました。
+最初の 4年半は、ECS Fargate 上の Spring Boot アプリ、Lambda、Step Functions、SQS といった AWS マネージドサービス上のワークロード設計と実装を続けてきました。
 
-その部署異動し、2年ほどAWS Amplifyで主にCognito、AppSync、Lambda、DynamoDB の組み合わせ用いたWEBサービスを扱うようになりました。
+その後、部署異動し、2年ほどAWS Amplifyで主にCognito、AppSync、Lambda、DynamoDB の組み合わせを用いたWebサービスを扱うようになりました。
 
 ただ、最近気づいたこととして、
 
-- 業界ではこの Web サーバー型がスタンダードであり、Amplifyのようなサーバーレスが出た現在も尚主流
+- 業界ではこの Webサーバー型がスタンダードであり、Amplifyのようなサーバーレスが出た現在もなお主流である
 - AWS資格でもサーバー型のケースが多い
 - これまで触ってきたのはアプリ層と AWS マネージドのワークロードだけで、その下の VPC、Subnet、Security Group、ALB、RDS は別チームから整えられた状態で渡ってきていた
 
-そこで、さすがにAWSの主要技術を触っていないのはまずいと感じ、自分用に Web サーバー構成を一度ゼロから組むことにしました。
+そこで、さすがにAWSの主要技術を触っていないのはまずいと感じ、自分用に Webサーバー構成を一度ゼロから組むことにしました。
 
-VPC を 3 層に分けて、Security Group の ingress を連鎖させて、CloudFront から ALB、ECS、RDS まで経路を通すところまで、自分で書きました。Amplify と AWS マネージドサービス、そして別チームに任せていた範囲を、自分で組み立てるところまで来ました。
+VPC を 3層に分けて、Security Group の ingress を連鎖させて、CloudFront から ALB、ECS、RDS まで経路を通すところまで、自分で書きました。Amplify と AWS マネージドサービス、そして別チームに任せていた範囲を、自分で組み立てるところまで来ました。
 
 ## 組んだもの
 
@@ -38,7 +37,7 @@ VPC を 3 層に分けて、Security Group の ingress を連鎖させて、Clou
 ![資産一覧画面](/images/web-server-architecture/assets.png)
 ![ユーザー一覧画面](/images/web-server-architecture/users.png)
 
-申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Web アプリの MVP を、Spring Boot と Thymeleaf で書きました。UIは適当です。勿論ダミーデータです。
+申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Webアプリの MVP を、Spring Boot と Thymeleaf で書きました。UIは適当です。勿論ダミーデータです。
 
 主な機能は次のとおりです。
 
@@ -48,9 +47,7 @@ VPC を 3 層に分けて、Security Group の ingress を連鎖させて、Clou
 - 申請管理（下書き、提出、承認、却下、差戻し）
 - 資産管理と会社別マスタ管理
 
-ソースは https://github.com/kyiwanami/workops に置いています。
-
-ここからは、このアプリを動かす AWS の Web サーバー構成と、組む途中でハマった箇所を残します。
+ここからは、このアプリを動かす AWS の Webサーバー構成と、組む途中でハマった箇所を残します。
 
 ## リクエスト経路で見る全体構成
 
@@ -94,7 +91,7 @@ Viewer から CloudFront までは HTTPS、CloudFront から内部 ALB と、ALB
 
 CloudFront 側の設定は caching disabled、origin request policy は `ALL_VIEWER_EXCEPT_HOST_HEADER` を選んでいます。
 
-VPC を 3 層の subnet に分けています。
+VPC を 3層の subnet に分けています。
 
 - public subnet：NAT Gateway を置いて、app private subnet からの egress（ECR image pull、CloudWatch Logs）を出している
 - app private subnet：ECS Fargate task と内部 ALB
@@ -132,14 +129,14 @@ ECS task が必要とする設定値は、性質ごとに置き場所を分け�
 
 - RDS：`db.t4g.micro`
 - ECS task：0.5 vCPU / 1 GB
-- ECR image retention：2 世代
-- CloudWatch Logs retention：7 日
+- ECR image retention：2世代
+- CloudWatch Logs retention：7日
 
-これで開発期間 2 週間のあいだ AWS 料金は合計 5 ドル程度に収まりました。
+これで開発期間 2週間のあいだ AWS 料金は合計 5ドル程度に収まりました。
 
 ## CDK Stack を、立てっぱなしの側と必要なときだけ立てる側に分ける
 
-5 ドルで済んだのは、CDK Stack を「立てっぱなしの側」と「必要なときだけ立てる側」に最初から分けたからです。
+5ドルで済んだのは、CDK Stack を「立てっぱなしの側」と「必要なときだけ立てる側」に最初から分けたからです。
 
 アプリを触らない時間帯は、料金が乗る部分だけ destroy で消せるようにしておきたかったので、Stack の境界をその基準で切りました。
 
@@ -176,7 +173,7 @@ flowchart TB
 
 動作確認したいときだけ deploy して、確認が終わったら destroy する運用にしています。
 
-deploy は `app-deploy-dev` workflow を手動 dispatch して、`confirm_runtime_deploy` を true にして起動します。workflow は DataStack、EgressStack、EdgeStack、AppRuntimeStack を順に deploy したあと、ECS service stable を待ち、CloudFront 経由で `/actuator/health` が 200 を返すまで 10 回までリトライして確認します。destroy は手元から逆順に流します。
+deploy は `app-deploy-dev` workflow を手動 dispatch して、`confirm_runtime_deploy` を true にして起動します。workflow は DataStack、EgressStack、EdgeStack、AppRuntimeStack を順に deploy したあと、ECS service stable を待ち、CloudFront 経由で `/actuator/health` が 200 を返すまで 10回までリトライして確認します。destroy は手元から逆順に流します。
 
 RDS（DataStack）も必要なときだけ立てる側に置いている点は、最初は迷いました。普通に考えると RDS はデータが乗るので残したくなりますが、立てっぱなし側に置くと月額がそのぶん乗り続けます。WorkOps の AWS dev は確認データを永続させる目的の DB ではないと割り切り、Flyway migration V1 〜 V8 と `db/seed/aws-dev` の seed で毎回ゼロから再構築する設計にしました。`db/seed/aws-dev` の `V6__insert_users.sql` は `cognito_sub` を NULL で seed しておき、実際の Cognito 連携時に WorkOps の管理導線から `AdminCreateUser` で書き戻します。これで DataStack も destroy 対象に置けて、立てっぱなし側の月額をほぼゼロに保てています。
 
@@ -184,7 +181,7 @@ CDK の entrypoint は単一の `bin/cdk.ts` で全 Stack を定義していま�
 
 - `infra-dev` workflow：FoundationStack、SecretStack、ConfigStack、IdentityStack、RegistryStack、LogsStack を deploy（CI 後に自動）
 - `app-deploy-dev` workflow：DataStack、EgressStack、EdgeStack、AppRuntimeStack を deploy（手動 dispatch）
-- GitHub Actions OIDC の Role を持つ DeployStack だけは最初の 1 回、手元から deploy しています
+- GitHub Actions OIDC の Role を持つ DeployStack だけは最初の 1回、手元から deploy しています
 
 ```mermaid
 flowchart TB
@@ -215,7 +212,7 @@ CDK で Custom Resource を書くと、内側で Lambda Provider が動いて、
 
 調べると、Provider が暗黙に作る LogGroup は CDK の `RemovalPolicy` 経路に乗っていないようでした。
 
-LogGroup を Provider と同じ Stack 内で明示的に作って、Provider に `logGroup` で渡す形に直したら、Stack の destroy で LogGroup も一緒に消えるようになり、残骸が増えなくなりました。LogGroup は Provider 用と、Custom Resource の実体である Lambda 用の 2 つを別々に作って、それぞれの construct に渡しています。
+LogGroup を Provider と同じ Stack 内で明示的に作って、Provider に `logGroup` で渡す形に直したら、Stack の destroy で LogGroup も一緒に消えるようになり、残骸が増えなくなりました。LogGroup は Provider 用と、Custom Resource の実体である Lambda 用の 2つを別々に作って、それぞれの construct に渡しています。
 
 ### Stack 間参照を `ImportValue` でやると壊せない
 
@@ -231,17 +228,17 @@ ImportValue を経由しなくなったので、destroy 時の引っ張りが消
 
 ## 個人検証環境で削った構成判断
 
-開発期間 2 週間で AWS 料金が合計 5 ドル程度に収まったのは、個人検証環境という前提を理由に、本番なら入れる構成要素を最初から削ったからでした。
+開発期間 2週間で AWS 料金が合計 5ドル程度に収まったのは、個人検証環境という前提を理由に、本番なら入れる構成要素を最初から削ったからでした。
 
 削った項目を、本番に戻す想定とあわせて並べます。
 
 - **RDS の Multi-AZ**：DataStack の MySQL は singleAZ、`db.t4g.micro`、20 GB gp2 です。検証データを毎回 Flyway で作り直す前提なので冗長性を捨てました。本番では Multi-AZ にするか、Aurora Serverless v2 に置き換えます。
 - **独自ドメインと ACM 証明書、Route 53**：取りません。CloudFront default domain がそのまま HTTPS 入口になるので、ドメイン取得と DNS 設定、ACM 発行の経路を丸ごと省きました。
 - **WAF**：CloudFront の前段に WAF を挟んでいません。攻撃面を持たない検証環境なので入れていません。独自ドメイン化と一緒に、AWS WAF をマネージドルールで紐付けます。
-- **NAT Gateway の冗長化**：EgressStack の NAT は 1 つだけで、public subnet[0] にしか置いていません。app private subnet が 2 AZ にあるので、片方の AZ がダウンしたときは ECR からの image pull が落ちます。本格運用では各 AZ に 1 つずつ置きます。
+- **NAT Gateway の冗長化**：EgressStack の NAT は 1つだけで、public subnet[0] にしか置いていません。app private subnet が 2 AZ にあるので、片方の AZ がダウンしたときは ECR からの image pull が落ちます。本格運用では各 AZ に 1つずつ置きます。
 - **ALB の HTTPS listener**：内部 ALB は HTTP 80 だけで listener を持っています。CloudFront → 内部 ALB の VPC origin が HTTP なので、ALB に証明書を入れていません。
 - **ECS Service の Auto Scaling**：desiredCount は 1 固定です。検証中に同時アクセスが増える状況がないので、1 task で十分です。
-- **CloudWatch Logs と ECR の保持期間**：Logs retention は 7 日、ECR の tagged image は 2 世代、untagged は 1 日で削除しています。
+- **CloudWatch Logs と ECR の保持期間**：Logs retention は 7日、ECR の tagged image は 2世代、untagged は 1日で削除しています。
 
 これらは「立てっぱなしの側」と「必要なときだけ立てる側」の Stack 分離方針と組み合わさって、立てっぱなしの側はほぼ料金がかからない構成になりました。
 
@@ -249,15 +246,15 @@ ImportValue を経由しなくなったので、destroy 時の引っ張りが消
 
 secret の本数が少なく、ECR の image 容量も小さく、Cognito の MAU も検証中はゼロに近いので、立てっぱなしでも月額の見えるラインに乗りません。
 
-2 週間で 5 ドル、の内訳は、必要なときだけ立てる側を deploy していた時間に NAT Gateway と RDS と ECS task と ALB が乗っていた分、と整理できます。
+2週間で 5ドル、の内訳は、必要なときだけ立てる側を deploy していた時間に NAT Gateway と RDS と ECS task と ALB が乗っていた分、と整理できます。
 
 ## CloudFront を CDN 入口に置いた選択
 
-CloudFront を入口に置いた理由は 1 つではありません。
+CloudFront を入口に置いた理由は 1つではありません。
 
 入口の形は CDN に揃えることにしました。
 
-業界一般の Web サーバー構成では、CDN として CloudFront を入口に置くのが標準的な並びです。
+業界一般の Webサーバー構成では、CDN として CloudFront を入口に置くのが標準的な並びです。
 
 配信負荷分散や Edge キャッシュを今は使わない検証構成でも、入口の形だけ標準に揃えておくと、後段に WAF を挟む、Origin Shield を有効にする、別 origin を追加する、Lambda@Edge を入れる、といった拡張がそのまま選択肢に乗ります。
 
@@ -277,7 +274,7 @@ CloudFront には VPC origin の機能があり、CloudFront から直接 privat
 
 ALB を public にした構成と比べて、ALB の SG inbound に CloudFront prefix list だけを許可する形にできて、ALB がインターネットに直接さらされません。
 
-CloudFront を入口にした副作用として、Cognito Hosted UI の戻り先周りで詰まった箇所が 2 つあります。
+CloudFront を入口にした副作用として、Cognito Hosted UI の戻り先周りで詰まった箇所が 2つあります。
 
 ### Cognito callback URL と CloudFront ドメインの循環依存
 
@@ -291,7 +288,7 @@ Cognito 側で先に callback URL を確定させたくても、CloudFront を d
 
 書き戻す側は EdgeStack 内の Custom Resource Lambda で、`UpdateUserPoolClient` API を呼び出します。
 
-運営側用と企業テナント側用の 2 つの App Client に対して、それぞれ `https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant` の URL を組み立てて書き込んでいます。運営側用は `/platform`、企業テナント側用は `/tenant` で受ける形です。
+運営側用と企業テナント側用の 2つの App Client に対して、それぞれ `https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant` の URL を組み立てて書き込んでいます。運営側用は `/platform`、企業テナント側用は `/tenant` で受ける形です。
 
 Custom Resource は Create と Update のときだけ書き戻して、Delete のときは何もしません。
 
@@ -324,11 +321,15 @@ RDS は db isolated subnet に置いていて、手元の MySQL クライアン�
 - 本番相当の運用監視（CloudWatch Alarm の整備、SNS 通知）
 - バックアップとリストア手順の検証
 
+## ソースコード
+
+https://github.com/kyiwanami/workops
+
 ## おわりに
 
 ここまで、触ってこなかった範囲を自分で書いてみたことで、自分で組み立てられるようになりました。
 
-ところで、今回の開発は AI をフル活用しました。コーディングはすべてコーディングエージェントに任せていて、自分では 1 行も書いていません。
+ところで、今回の開発は AI をフル活用しました。コーディングはすべてコーディングエージェントに任せていて、自分では 1行も書いていません。
 
 要件、基本設計、ADR、実装計画は Notion 上で Notion AI と壁打ちして固め、確定したものをコーディングエージェントに渡して実装させる、という進め方です。
 
