@@ -34,20 +34,21 @@ VPC を 3 層に分けて、Security Group の ingress を連鎖させて、Clou
 
 ## 組んだもの
 
-<aside>
-📷
+```markdown
+!申請一覧画面
 
-ここに画面キャプチャを 1〜2 枚入れます（あとで差し込み予定）
+!資産一覧画面
 
-</aside>
+!ユーザー一覧画面
+```
 
-申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Web アプリの MVP を、Spring Boot と Thymeleaf で書きました。
+申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Web アプリの MVP を、Spring Boot と Thymeleaf で書きました。UIは適当です。勿論ダミーデータです。
 
 主な機能は次のとおりです。
 
 - マルチテナント分離（会社境界、`company_id` で他社データの参照と更新を遮断）
-- Cognito の App Client 分離（PLATFORM 用と TENANT 用）
-- ロール認可（PLATFORM_ADMIN、TENANT_MANAGER、TENANT_EDITOR、TENANT_VIEWER）
+- Cognito の App Client 分離（運営側用と企業テナント側用）
+- ロール認可（運営側の WorkOps 管理者、企業テナント側の管理者・編集者・閲覧者）
 - 申請管理（下書き、提出、承認、却下、差戻し）
 - 資産管理と会社別マスタ管理
 
@@ -294,7 +295,7 @@ Cognito 側で先に callback URL を確定させたくても、CloudFront を d
 
 書き戻す側は EdgeStack 内の Custom Resource Lambda で、`UpdateUserPoolClient` API を呼び出します。
 
-PLATFORM 用と TENANT 用の 2 つの App Client に対して、それぞれ `https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant` の URL を組み立てて書き込んでいます。
+運営側用と企業テナント側用の 2 つの App Client に対して、それぞれ `https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant` の URL を組み立てて書き込んでいます。運営側用は `/platform`、企業テナント側用は `/tenant` で受ける形です。
 
 Custom Resource は Create と Update のときだけ書き戻して、Delete のときは何もしません。
 
