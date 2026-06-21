@@ -1,5 +1,5 @@
 ---
-title: "CloudFrontからECS、RDSまでつなぐWebサーバー構成をゼロから組んだ"
+title: "6年目エンジニアが さすがに Web サーバー構成をゼロから組んだ"
 emoji: "🧱"
 type: "tech"
 topics:
