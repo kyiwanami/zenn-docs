@@ -34,13 +34,9 @@ VPC を 3 層に分けて、Security Group の ingress を連鎖させて、Clou
 
 ## 組んだもの
 
-```markdown
-!申請一覧画面
-
-!資産一覧画面
-
-!ユーザー一覧画面
-```
+![申請一覧画面](/images/web-server-architecture/requests.png)
+![資産一覧画面](/images/web-server-architecture/assets.png)
+![ユーザー一覧画面](/images/web-server-architecture/users.png)
 
 申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Web アプリの MVP を、Spring Boot と Thymeleaf で書きました。UIは適当です。勿論ダミーデータです。
 
