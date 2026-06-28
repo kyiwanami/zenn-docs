@@ -323,7 +323,7 @@ RDS は db isolated subnet に置いていて、手元の MySQL クライアン�
 
 ## ソースコード
 
-https://github.com/kyiwanami/workops
+https://github.com/kyiwanami/workops/tree/zenn-snapshot
 
 ## おわりに
 
