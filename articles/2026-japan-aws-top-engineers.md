@@ -7,6 +7,8 @@ topics:
   - career
   - ai
 published: false
+publication_name: "trust"
+published_at: 2026-06-28
 ---
 
 こんにちは。岩波と申します。
