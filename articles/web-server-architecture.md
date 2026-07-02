@@ -91,6 +91,10 @@ Viewer から CloudFront までは HTTPS、CloudFront から内部 ALB と、ALB
 
 CloudFront 側の設定は caching disabled、origin request policy は `ALL_VIEWER_EXCEPT_HOST_HEADER` を選んでいます。
 
+origin request policy は、CloudFront が受け取ったリクエストのうち、どのヘッダやクエリを origin へ引き渡すかを決める設定です。
+
+以降、subnet や SG への内向きの通信許可を ingress、外向きの通信を egress と書きます。
+
 VPC を 3層の subnet に分けています。
 
 - public subnet：NAT Gateway を置いて、app private subnet からの egress（ECR image pull、CloudWatch Logs）を出している
@@ -118,6 +122,8 @@ flowchart TB
 ```
 
 Security Group の ingress は CloudFront の managed prefix list → ALB → ECS task → RDS の順で連鎖させています。
+
+managed prefix list は、CloudFront の送信元 IP レンジの集合を AWS 側が管理と更新をしてくれるリストで、SG の許可元としてそのまま指定できます。
 
 自分は CloudFront が ingress の起点になるという意識をこれまで一度も持ったことがなかったので、ALB の SG inbound に CloudFront の managed prefix list を入れる部分で一度止まりました。最初は ALB の inbound 設定なしで CloudFront から流したところ、504 が返ってきました。prefix list ID を `pl-...` で固定せず、`com.amazonaws.global.cloudfront.origin-facing` の名前で CDK lookup させて inbound に入れたら通りました。
 
@@ -167,7 +173,7 @@ flowchart TB
 
 これらは存在しているだけでは料金がほぼ発生しません（厳密には Secrets Manager の secret 数や ECR の image 容量で多少出ますが、ほぼ無視できる額です）。
 
-立てっぱなしにしておくと確認サイクルが速く、毎回作り直すと OIDC Provider や Cognito User Pool の sub が変わって設定が崩れるので、これらは触らない側に寄せました。
+立てっぱなしにしておくと確認サイクルが速く、毎回作り直すと OIDC Provider や Cognito User Pool の sub が変わって設定が崩れるので、これらは触らない側に寄せました。sub は Cognito がユーザーごとに発行する不変の ID で、User Pool を作り直すと同じユーザーでも別の値になります。
 
 必要なときだけ立てる側は RDS、NAT、CloudFront、ECS、ALB です。
 
@@ -175,13 +181,17 @@ flowchart TB
 
 deploy は `app-deploy-dev` workflow を手動 dispatch して、`confirm_runtime_deploy` を true にして起動します。workflow は DataStack、EgressStack、EdgeStack、AppRuntimeStack を順に deploy したあと、ECS service stable を待ち、CloudFront 経由で `/actuator/health` が 200 を返すまで 10回までリトライして確認します。destroy は手元から逆順に流します。
 
-RDS（DataStack）も必要なときだけ立てる側に置いている点は、最初は迷いました。普通に考えると RDS はデータが乗るので残したくなりますが、立てっぱなし側に置くと月額がそのぶん乗り続けます。WorkOps の AWS dev は確認データを永続させる目的の DB ではないと割り切り、Flyway migration V1 〜 V8 と `db/seed/aws-dev` の seed で毎回ゼロから再構築する設計にしました。`db/seed/aws-dev` の `V6__insert_users.sql` は `cognito_sub` を NULL で seed しておき、実際の Cognito 連携時に WorkOps の管理導線から `AdminCreateUser` で書き戻します。これで DataStack も destroy 対象に置けて、立てっぱなし側の月額をほぼゼロに保てています。
+RDS（DataStack）も必要なときだけ立てる側に置いている点は、最初は迷いました。普通に考えると RDS はデータが乗るので残したくなりますが、立てっぱなし側に置くと月額がそのぶん乗り続けます。WorkOps の AWS dev は確認データを永続させる目的の DB ではないと割り切り、Flyway migration V1 〜 V8 と `db/seed/aws-dev` の seed で毎回ゼロから再構築する設計にしました。Flyway は、SQL ファイルに版番号を付け、どこまで適用済みかを DB 側に記録するマイグレーションツールです。seed は動作確認用の初期データを流し込む SQL を指しています。`db/seed/aws-dev` の `V6__insert_users.sql` は `cognito_sub` を NULL で seed しておき、実際の Cognito 連携時に WorkOps の管理導線から `AdminCreateUser` で書き戻します。これで DataStack も destroy 対象に置けて、立てっぱなし側の月額をほぼゼロに保てています。
 
 CDK の entrypoint は単一の `bin/cdk.ts` で全 Stack を定義しています。立てっぱなし／必要なときだけの境界は、GitHub Actions の workflow 側で deploy 対象 Stack を明示することで実現しています。
 
 - `infra-dev` workflow：FoundationStack、SecretStack、ConfigStack、IdentityStack、RegistryStack、LogsStack を deploy（CI 後に自動）
 - `app-deploy-dev` workflow：DataStack、EgressStack、EdgeStack、AppRuntimeStack を deploy（手動 dispatch）
 - GitHub Actions OIDC の Role を持つ DeployStack だけは最初の 1回、手元から deploy しています
+
+OIDC 連携は、GitHub Actions に AWS のアクセスキーを持たせず、workflow の実行時だけ一時的な認証情報を受け取らせる仕組みです。
+
+workflow は AssumeRoleWithWebIdentity で DeployStack の Role を引き受けてから deploy します。
 
 ```mermaid
 flowchart TB
@@ -225,6 +235,18 @@ Stack 間で値を渡すと、CDK は標準では `Fn::ImportValue` を使いま
 `defaultCrossStackReferences: weak` を立てたうえで、依存値は props で渡し、CloudFormation 側では `Fn::GetStackOutput` で読む形に変えて抜けました。
 
 ImportValue を経由しなくなったので、destroy 時の引っ張りが消えました。
+
+```mermaid
+flowchart TB
+    subgraph before["標準の ImportValue"]
+        A1[FoundationStack] -->|"Export を参照"| B1[AppRuntimeStack]
+        N1["参照されている側は destroy 不可"]
+    end
+    subgraph after["weak 参照へ変更後"]
+        A2[FoundationStack] -. "props + Fn::GetStackOutput" .-> B2[AppRuntimeStack]
+        N2["片方だけ destroy できる"]
+    end
+```
 
 ## 個人検証環境で削った構成判断
 
@@ -276,6 +298,8 @@ ALB を public にした構成と比べて、ALB の SG inbound に CloudFront p
 
 CloudFront を入口にした副作用として、Cognito Hosted UI の戻り先周りで詰まった箇所が 2つあります。
 
+Hosted UI は、Cognito が用意するログイン画面をそのまま借りられる機能で、ログイン後は App Client に登録した callback URL へ戻ってきます。
+
 ### Cognito callback URL と CloudFront ドメインの循環依存
 
 Cognito の App Client の callback URL に CloudFront のドメインを入れたいのに、その CloudFront 側の deploy には Cognito の Hosted UI URL が要る、という循環依存が発生しました。
@@ -285,6 +309,18 @@ CloudFront のドメインは Distribution が deploy された時点でない�
 Cognito 側で先に callback URL を確定させたくても、CloudFront を deploy するまでは入れる文字列がない、という状態です。
 
 最初は placeholder の callback URL（`https://example.com/` のようなダミー）で Cognito を deploy しておき、CloudFront の deploy 後に EdgeStack の Custom Resource で実際の CloudFront ドメインを書き戻す、という二段にして抜けました。
+
+```mermaid
+sequenceDiagram
+    participant Deploy as deploy 作業
+    participant Cognito
+    participant CF as CloudFront
+    participant CR as Custom Resource Lambda
+    Deploy->>Cognito: placeholder の callback URL で先に deploy
+    Deploy->>CF: Distribution を deploy（ここでドメイン確定）
+    CF->>CR: EdgeStack の deploy 中に起動
+    CR->>Cognito: UpdateUserPoolClient で実際の URL を書き戻し
+```
 
 書き戻す側は EdgeStack 内の Custom Resource Lambda で、`UpdateUserPoolClient` API を呼び出します。
 
@@ -300,6 +336,14 @@ Cognito Hosted UI でログインしたあと、リダイレクトされた先�
 
 原因は、Spring Security が OAuth2 ログイン後のリダイレクトで絶対 URL を返していて、その絶対 URL の host が Request の Host ヘッダではなく ALB の内部 DNS 名から組み立てられていたためでした。
 
+```mermaid
+flowchart LR
+    B[ブラウザ] -->|HTTPS| CF[CloudFront]
+    CF -->|"HTTP（VPC origin）"| ALB[内部 ALB]
+    ALB --> APP[Spring Boot]
+    APP -->|"絶対 URL の host が<br>ALB 内部 DNS 名になる"| B
+```
+
 CloudFront → 内部 ALB の VPC origin は HTTPS から HTTP に降りるので、`X-Forwarded-Proto` と `X-Forwarded-Host` の扱いが絡みます。
 
 Spring Boot 側で `server.tomcat.use-relative-redirects=true` を立てて、絶対 URL ではなく相対 URL を返すようにしたら抜けました。
@@ -310,7 +354,14 @@ relative にすると host を組み立てる必要がなくなるので、Host 
 
 ### private subnet にいる RDS の中身をどう見るか
 
-RDS は db isolated subnet に置いていて、手元の MySQL クライアントから直接は届きません。EC2 踏み台を立てるか、SSM port forwarding を経由するか、いくつかやり方を見たうえで、今回は AWS Console の RDS 画面に出る「CloudShell VPC environment で接続」を使うことにしました。RDS Console から CloudShell VPC environment を起動すると、VPC 内に CloudShell 用の ENI が建ち、そこに `mysql` クライアントが入った環境で `USE workops;` まで通せました。DataStack 側に CloudShell VPC environment 専用の SG を別途用意して、self-referencing で MySQL 3306 を通したうえで RDS にぶら下げています。確認が終わったら CloudShell VPC environment は削除します。
+RDS は db isolated subnet に置いていて、手元の MySQL クライアントから直接は届きません。EC2 踏み台を立てるか、SSM port forwarding を経由するか、いくつかやり方を見たうえで、今回は AWS Console の RDS 画面に出る「CloudShell VPC environment で接続」を使うことにしました。RDS Console から CloudShell VPC environment を起動すると、VPC 内に CloudShell 用の ENI が建ち、そこに `mysql` クライアントが入った環境で `USE workops;` まで通せました。ENI は VPC 内に作られる仮想のネットワークインターフェースで、これを通じて CloudShell から VPC 内のリソースへ到達できます。DataStack 側に CloudShell VPC environment 専用の SG を別途用意して、self-referencing で MySQL 3306 を通したうえで RDS にぶら下げています。確認が終わったら CloudShell VPC environment は削除します。
+
+```mermaid
+flowchart LR
+    Console["RDS Console"] --> CS["CloudShell VPC environment"]
+    CS -->|"VPC 内に ENI が建つ"| ENI["CloudShell 用 SG"]
+    ENI -->|"3306"| RDS[("RDS MySQL")]
+```
 
 ## これから足したい部分
 
@@ -323,7 +374,7 @@ RDS は db isolated subnet に置いていて、手元の MySQL クライアン�
 
 ## ソースコード
 
-https://github.com/kyiwanami/workops/tree/zenn-snapshot
+https://github.com/kyiwanami/workops
 
 ## おわりに
 
