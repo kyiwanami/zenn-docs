@@ -1,16 +1,19 @@
 ---
+
 title: "6年目エンジニアが、さすがに CI/CD パイプラインをゼロから組んだ"
 emoji: "🚚"
 type: "tech"
 topics:
-  - aws
-  - cdk
-  - codepipeline
-  - ecs
-  - cicd
-  - rds
+
+- aws
+- cdk
+- codepipeline
+- ecs
+- cicd
+- rds
 published: false
-published_at: 2026-07-02
+published_at: 2026-07-03
+
 ---
 ## はじめに
 
@@ -47,15 +50,18 @@ WorkOps は Web サーバー構成を自分で設計するために作った検�
 ```mermaid
 flowchart LR
     A[git push] --> B[Source]
-    B --> C[品質ゲート]
-    C --> D[常設 Stack の deploy]
-    C --> E[コンテナイメージの build]
-    D --> F{手動承認}
-    E --> F
-    F --> G[課金系 Stack の deploy]
-    G --> H[DB マイグレーション]
-    H --> I[Blue/Green 切り替え]
+    B --> C[Synth]
+    C --> D[BuildAndTest<br>品質ゲート]
+    D --> E[DeployFoundation<br>常設 Stack]
+    D --> F[BuildWebImage<br>イメージ build]
+    E --> G{ManualApproval}
+    F --> G
+    G --> H[DeployRuntimeInfrastructure<br>課金系 Stack]
+    H --> I[RunMigration<br>DB マイグレーション]
+    I --> J[DeployAppRuntime<br>Blue/Green 切り替え]
 ```
+
+図の各ステージ名は実際の [CodePipeline](https://docs.aws.amazon.com/codepipeline/latest/userguide/welcome.html) のステージ名で、リポジトリのコードとそのまま対応します。
 
 [CDK Pipelines](https://docs.aws.amazon.com/cdk/v2/guide/cdk-pipeline.html) は、パイプライン自体を CDK のコードとして定義し、パイプラインが自分自身の定義変更も取り込んで更新する仕組みです。
 
@@ -71,9 +77,26 @@ flowchart LR
 
 つまり承認ボタンは「リリースしてよいか」の確認であると同時に、「ここから課金してよいか」の確認でもあります。
 
-なお、当初は GitHub Actions からのデプロイも検討しましたが、AWS 側の権限管理とパイプラインの状態管理を 1 か所に寄せるため、[CodePipeline](https://docs.aws.amazon.com/codepipeline/latest/userguide/welcome.html) に一本化しました。
+### GitHub Actions を組んでから、捨てた
 
-本記事で扱うのはこの一本化後の構成です。
+実は前記事の時点では、GitHub Actions と OIDC のデプロイを組んで動かしていました。
+
+その上で [CodePipeline](https://docs.aws.amazon.com/codepipeline/latest/userguide/welcome.html) に乗り換えています。
+
+両方組んで感じた差は次のとおりです。
+
+| 観点 | GitHub Actions | CodePipeline + CDK Pipelines |
+| --- | --- | --- |
+| 組み始めの速さ | yaml 1 枚で動く | 初回は概念の学習が要る |
+| AWS 側の権限管理 | OIDC の信頼ポリシーを別途管理 | パイプラインの role に集約 |
+| デプロイ状態の見え方 | AWS の外から結果だけ見える | ステージ単位で AWS 内に揃う |
+| パイプライン自体の変更 | yaml を手で編集 | CDK コードとして品質ゲートを通る |
+
+決め手は最後の行です。
+
+インフラをコードで管理するなら、パイプラインだけ手書きの yaml で残す理由がありませんでした。
+
+本記事で扱うのは、この乗り換え後の構成です。
 
 ## リリースの流れを辿る
 
@@ -136,6 +159,10 @@ ECR のタグは [immutable](https://docs.aws.amazon.com/AmazonECR/latest/usergu
 
 「同じタグなのに中身が違う」という状態を仕組みで作れなくするためで、保持するのは最新 10 個だけです。
 
+Trivy のスキャンは、この push より前に実行しています。
+
+脆弱性のあるイメージがレジストリに存在する瞬間を、そもそも作らないためです。
+
 ### 承認を待つ間、通知は 2 種類しか飛ばない
 
 承認待ちに入ると通知が届きます。
@@ -180,6 +207,52 @@ bake は、切り替えが済んだ後も旧タスクをすぐには破棄せず
 どちらかが発火すると、旧タスクへ自動でロールバックします。
 
 bake を置く理由は、起動直後は正常に見えて数十秒後に落ちる、という壊れ方をアプリケーションがするためです。
+
+Blue/Green を支える設定値は次のとおりです。
+
+| 設定 | 値 | 意図 |
+| --- | --- | --- |
+| ヘルスチェック | `/actuator/health` を 30 秒間隔 | Spring Actuator の応答で判定 |
+| 起動猶予 | 90 秒 | Spring Boot の起動完了までヘルスチェック失敗を無視 |
+| デタッチ待ち | 30 秒 | 切り替え時に処理中のリクエストを流し切る |
+| デプロイ中の台数 | min 100% / max 200% | 旧タスクを残したまま新タスクを追加 |
+| circuit breaker | rollback 有効 | 起動失敗を繰り返す場合も自動で戻す |
+
+アラームは blue と green 両方のターゲットグループのメトリクスを数式で合算し、どちらの群にいるタスクかに関係なく全体の健全性を見ています。
+
+### push から完走までの実測
+
+時間も計測しました。
+
+1 回目は環境をゼロから立ち上げた初回、2 回目は Web アプリの変更だけを流した日常運転です。
+
+手動承認の待ち時間は除いています。
+
+| 区間 | 初回 | 日常の変更 |
+| --- | --- | --- |
+| Source からパイプラインの自己更新まで | 約 6 分 | 約 4 分 |
+| 品質ゲート | 4 分 07 秒 | 4 分 07 秒 |
+| 常設 Stack の deploy | 約 5 分 | 1 分 12 秒 |
+| イメージ build とスキャン | 3 分 36 秒 | 3 分 36 秒 |
+| 課金系 Stack の deploy | 約 25 分 | 1 分 50 秒 |
+| マイグレーションと Blue/Green | 約 6 分 | 約 9 分 |
+| 合計 | 約 50 分 | 約 26 分 |
+
+初回と日常で差が出るのは課金系 Stack の deploy です。
+
+初回は CloudFront を含む WebDelivery に 12 分 59 秒、RDS を含む Data に 7 分 51 秒かかりました。
+
+日常の実行ではどちらも作り直さないので、この時間は払っていません。
+
+EdgeStack を分割して CloudFront を常設側へ移した判断（後述）が、ここで効いています。
+
+正直、日常の変更で 26 分は速くないです。
+
+bake の 3 分は監視のために置いた時間なので削りませんが、Synth、パイプラインの自己更新、アセット転送、品質ゲートが直列に並ぶ約 8 分は、コードを 1 行変えただけでも毎回かかります。
+
+パイプライン定義の変更もコードとして品質ゲートを通る、という性質と引き換えの時間です。
+
+1 人で使う分には許容しました。チームで使うなら、まず品質ゲートの並列化から手を付けると思います。
 
 ## Stack をライフサイクルで切る
 
@@ -346,6 +419,78 @@ CodeArtifact の認証トークンをコンテナイメージのビルドに渡�
 
 S3 への通信だけは Gateway 型エンドポイント、つまり NAT を経由せず VPC 内から S3 へ直接到達する無料の経路に逃がし、NAT の通過量を抑えました。
 
+## 初回完走までに詰まった箇所
+
+パイプラインは一発では完走しませんでした。
+
+作業ミスの類いは省いて、この構成を選んだ人が同じように踏むはずの衝突を 3 つ書きます。
+
+### 自分を直す修正が、自分を通れない
+
+CDK Pipelines の self-mutation は、パイプライン定義の変更を Synth → SelfMutate の順で自分自身に取り込みます。
+
+初回の実走では、この Synth が落ちました。CodeBuild の Node.js が古いままで、依存が要求するバージョンに届かず、npm の lock file 検証も通らない状態です。
+
+ここで構造的な詰みに気づきました。Node.js を上げる修正を push しても、その修正をパイプラインに反映する SelfMutate は、壊れている Synth の後ろにいます。
+
+壊れているのが Synth 自身だと、直す変更がパイプラインを通れません。
+
+脱出方法は、ローカルから PipelineStack を直接 deploy して、Synth の CodeBuild 定義を先に更新することでした。
+
+通常運用はパイプライン経由に一本化していますが、パイプライン自身が壊れたときのためのローカル deploy 経路は、退路として手順に残しています。
+
+### Docker Hub の rate limit を 2 回踏んだ
+
+依存取得は CodeArtifact に一本化したはずでした。それでも build が落ちました。
+
+1 回目は Dockerfile の base image です。eclipse-temurin を Docker Hub から匿名 pull していて、rate limit に当たりました。
+
+CodeBuild は毎回まっさらなホストで走るため、手元では効いていた pull キャッシュが存在しません。
+
+base image は Amazon ECR Public の Amazon Corretto と Amazon Linux 2023 minimal に替えました。
+
+2 回目は品質ゲートの中でした。統合テストの Testcontainers が、MySQL 8.4 の image をやはり Docker Hub から pull していました。
+
+こちらは ECR Public のミラーを代替 image に指定し、Testcontainers が後始末用に起動する Ryuk コンテナも Docker Hub 由来なので無効化しました。
+
+Maven と npm だけ見て依存経路を塞いだつもりでしたが、コンテナイメージも依存です。取得経路の棚卸しから丸ごと漏れていました。
+
+### SSM contract は region を跨げない
+
+CloudFront 用の WAF は us-east-1 に作る、という AWS 側の制約があります。
+
+そこで WAF の ARN も他の値と同じように SSM contract で公開したところ、東京リージョン側の WebDelivery の deploy が、parameter が見つからず落ちました。
+
+SSM Parameter Store は region 内の仕組みで、us-east-1 に書いた値は東京からは見えません。
+
+この 1 値だけは SSM をやめ、CDK の cross-region reference で渡しました。
+
+Stack 間の値の受け渡しを SSM contract に揃えるという方針の、唯一の例外が region 境界で生まれた形です。
+
+## WAF とセキュリティメトリクス
+
+パイプラインの流れとは別に、この構成で足したセキュリティまわりを 2 つ書きます。
+
+### WAF は us-east-1 という制約ごと組み込んだ
+
+CloudFront に WAF を付ける場合、WebACL は us-east-1 に作る必要があります。
+
+そこで WebAcl だけ独立した Stack にし、CDK の cross-region reference で ARN を東京リージョン側の CloudFront に渡しています。
+
+ルールは AWS Managed Rules の Common Rule Set を Count mode で有効化しました。
+
+ログは `aws-waf-logs-` という prefix が必須という命名制約に従った LogGroup に、1 週間だけ保持しています。
+
+### 認証・認可の失敗はメトリクスとして数えている
+
+アプリケーションは認可拒否やユーザー突合の失敗を構造化ログとして出しています。
+
+これを CloudWatch Logs の metric filter 6 本で拾い、WorkOps/Security という名前空間のメトリクスに変換しています。
+
+対象は認可拒否、Cognito ユーザーと DB ユーザーの突合失敗、actor type の不整合、権限セットの未割り当てなどです。
+
+アラームとダッシュボードはあえて付けず、攻撃や設定ミスの痕跡を後から数えられる状態だけを作りました。
+
 ## 個人検証環境として削った判断
 
 作らなかったものも書いておきます。
@@ -357,6 +502,7 @@ S3 への通信だけは Gateway 型エンドポイント、つまり NAT を経
 - KMS の CMK（自分で管理する暗号鍵）。AWS 管理鍵との差分が鍵の管理コストに見合いませんでした
 - WAF の Block mode。ルールは Count mode、つまり検出だけ行い遮断しない設定で有効化し、誤遮断の調査コストを避けました
 - メトリクスのダッシュボード。見る習慣が生まれる規模ではないため、アラーム駆動に寄せました
+- パイプライン role の細分化。CDK Pipelines の self-mutation は、パイプライン自身が自分の定義を更新できる構成で、パイプラインの role が事実上インフラ全体の変更権限を持ちます。業務ならデプロイ role の分離と承認境界の設計が必須ですが、単一アカウントの個人環境では、GitHub 側の branch 保護を実質の境界として許容しました
 
 削る判断にも根拠を書き残す、というのはこのポートフォリオ全体で通している方針です。
 
@@ -369,6 +515,14 @@ S3 への通信だけは Gateway 型エンドポイント、つまり NAT を経
 ## おわりに
 
 ここまで、任せきりだった CI/CD を自分で組んでみたことで、push から Blue/Green までの流れを自分で組み立てられるようになりました。
+
+組んでみて分かったのは、業務で使ってきたパイプラインの構成が、どれも誰かの設計判断の結果だったということです。
+
+品質ゲートの位置、承認の位置、ロールバックの条件。
+
+使う側だったときは仕様として受け入れていたものが、いまは判断の履歴として読めます。
+
+次に業務でパイプラインの管理側と話すとき、話せる内容が変わっているはずです。
 
 一方で、監視と障害対応、DB のバックアップとリストアのような運用の領域は、まだ任せきりのままです。
 
