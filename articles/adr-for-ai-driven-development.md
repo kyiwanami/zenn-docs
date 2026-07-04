@@ -1,5 +1,5 @@
 ---
-title: "AIがやったのでわかりませんと言わないために、ADRで判断を残す"
+title: "「AIがやったからわかりません」と言わないために―ADRを残す大切さ"
 emoji: "📝"
 type: "idea"
 topics:
