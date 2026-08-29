@@ -8,7 +8,7 @@ topics:
   - cloudfront
   - ecs
   - rds
-published: false
+published: true
 published_at: 2026-06-21
 ---
 ## いま Webサーバー構成をゼロから組んだ動機

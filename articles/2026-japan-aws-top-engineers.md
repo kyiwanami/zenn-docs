@@ -6,7 +6,7 @@ topics:
   - aws
   - career
   - ai
-published: false
+published: true
 publication_name: "trust"
 published_at: 2026-06-28
 ---

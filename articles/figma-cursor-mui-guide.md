@@ -7,7 +7,7 @@ topics:
   - Cursor
   - MUI
   - Amplify
-published: false
+published: true
 publication_name: "trust"
 published_at: 2025-10-30
 ---

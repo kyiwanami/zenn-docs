@@ -8,7 +8,7 @@ topics:
   - lambda
   - sns
   - dynamodb
-published: false
+published: true
 publication_name: "trust"
 published_at: 2024-12-05
 ---

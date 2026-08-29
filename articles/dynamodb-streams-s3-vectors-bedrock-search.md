@@ -3,7 +3,7 @@ title: "DynamoDB Streams × S3 Vectors × Bedrock で作る、準リアルタイ
 emoji: "🔎"
 type: "tech"
 topics: ["aws", "amplify", "dynamodb", "bedrock", "vectorsearch"]
-published: false
+published: true
 publication_name: "trust"
 published_at: "2026-01-15"
 ---

@@ -3,7 +3,7 @@ title: "Amplify Gen2とCognito Hosted UIで実現する！アプリ間SSOガイ�
 emoji: "🔐"
 type: "tech"
 topics: ["AWS", "Amplify", "Cognito", "SSO", "React", "TypeScript"]
-published: false
+published: true
 publication_name: "trust"
 published_at: 2025-07-29
 ---

@@ -9,7 +9,7 @@ topics:
   - policyengine
   - jwt
   - cognito
-published: false
+published: true
 publication_name: "trust"
 published_at: 2026-03-09
 ---

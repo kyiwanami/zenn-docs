@@ -7,7 +7,7 @@ topics:
   - adr
   - architecture
   - documentation
-published: false
+published: true
 published_at: 2026-07-04
 ---
 
