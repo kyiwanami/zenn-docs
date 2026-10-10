@@ -1,5 +1,5 @@
 ---
-title: "6年目エンジニアが さすがに Web サーバー構成をゼロから組んだ"
+title: "6年目エンジニアが、さすがにWebサーバー構成をゼロから組んだ"
 emoji: "🧱"
 type: "tech"
 topics:
@@ -11,25 +11,23 @@ topics:
 published: true
 published_at: 2026-06-21
 ---
-## いま Webサーバー構成をゼロから組んだ動機
+## いまWebサーバー構成をゼロから組んだ理由
 
 こんにちは。岩波と申します。
 
-私は新卒エンジニア 6年目になりますが、自分で Webサーバー構成を組んだことがありませんでした。
+新卒で入社して6年目になりますが、自分でWebサーバー構成を組んだことがありませんでした。
 
-最初の 4年半は、[ECS Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html) 上の Spring Boot アプリ、Lambda、Step Functions、SQS といった AWS マネージドサービス上のワークロード設計と実装を続けてきました。
+最初の4年半は、[ECS Fargate](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html)上のSpring Bootアプリ、Lambda、Step Functions、SQSといったAWSマネージドサービス上のワークロード設計と実装を続けてきました。
 
-その後、部署異動し、2年ほど AWS Amplify で主に Cognito、AppSync、Lambda、DynamoDB の組み合わせを用いた Web サービスを扱うようになりました。
+その後、部署を異動し、2年ほどAWS AmplifyでWebサービスを扱うようになりました。主にCognito、AppSync、Lambda、DynamoDBを組み合わせています。
 
-ただ、最近気づいたこととして、
+最近、Amplifyのようなサーバーレスが登場した現在も、業界ではWebサーバー型が主流だと気づきました。AWSの資格試験でも、サーバー型のケースを多く見かけます。
 
-- 業界ではこの Webサーバー型がスタンダードであり、Amplifyのようなサーバーレスが出た現在もなお主流である
-- AWS資格でもサーバー型のケースが多い
-- これまで触ってきたのはアプリ層と AWS マネージドのワークロードだけで、その下の VPC、Subnet、Security Group、ALB、RDS は別チームから整えられた状態で渡ってきていた
+一方、自分が触ってきたのはアプリ層とAWSマネージドサービス上のワークロードだけでした。その下のVPC、Subnet、Security Group、ALB、RDSは、別チームが整えた状態で渡されていました。
 
-そこで、さすがにAWSの主要技術を触っていないのはまずいと感じ、自分用に Webサーバー構成を一度ゼロから組むことにしました。
+そこで、さすがにAWSの主要技術を触っていないのはまずいと感じ、自分用にWebサーバー構成を一度ゼロから組むことにしました。
 
-VPC を 3層に分けて、Security Group の ingress を連鎖させて、CloudFront から ALB、ECS、RDS まで経路を通すところまで、自分で書きました。Amplify と AWS マネージドサービス、そして別チームに任せていた範囲を、自分で組み立てるところまで来ました。
+VPCを3層に分け、Security Groupのingressを連鎖させ、CloudFrontからALB、ECS、RDSまで経路を通すところまで、自分で書きました。AmplifyやAWSマネージドサービス、別チームに任せていた範囲を、自分で組み立てられるようになりました。
 
 ## 組んだもの
 
@@ -37,17 +35,17 @@ VPC を 3層に分けて、Security Group の ingress を連鎖させて、Cloud
 ![資産一覧画面](/images/web-server-architecture/assets.png)
 ![ユーザー一覧画面](/images/web-server-architecture/users.png)
 
-申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理 Webアプリの MVP を、Spring Boot と Thymeleaf で書きました。UIは適当です。勿論ダミーデータです。
+申請、資産、会社、部署、ユーザーを管理するマルチテナント業務管理WebアプリのMVPを、Spring BootとThymeleafで作りました。UIは適当です。データはもちろんダミーです。
 
 主な機能は次のとおりです。
 
-- マルチテナント分離（会社境界、`company_id` で他社データの参照と更新を遮断）
-- Cognito の App Client 分離（運営側用と企業テナント側用）
-- ロール認可（運営側の WorkOps 管理者、企業テナント側の管理者・編集者・閲覧者）
+- マルチテナント分離（会社境界、`company_id`で他社データの参照と更新を遮断）
+- CognitoのApp Client分離（運営側用と企業テナント側用）
+- ロール認可（運営側のWorkOps管理者、企業テナント側の管理者・編集者・閲覧者）
 - 申請管理（下書き、提出、承認、却下、差戻し）
 - 資産管理と会社別マスタ管理
 
-ここからは、このアプリを動かす AWS の Webサーバー構成と、組む途中でハマった箇所を残します。
+ここからは、このアプリを動かすAWSのWebサーバー構成と、組む途中でハマったことを書きます。
 
 ## リクエスト経路で見る全体構成
 
@@ -71,34 +69,30 @@ flowchart LR
   ecr --> ecs
 ```
 
-ユーザーから RDS までの本流が CloudFront → 内部 ALB → ECS Fargate → RDS MySQL です。
+ユーザーのリクエストは、CloudFront → 内部ALB → ECS Fargate → RDS MySQLの順に進みます。
 
-そこから脇に [Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/what-is-amazon-cognito.html)、[Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html)、[SSM Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)、[CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html)、[ECR](https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html) と GitHub Actions が伸びています。
+認証や設定、ログ、デプロイには、[Cognito](https://docs.aws.amazon.com/cognito/latest/developerguide/what-is-amazon-cognito.html)、[Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html)、[SSM Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)、[CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html)、[ECR](https://docs.aws.amazon.com/AmazonECR/latest/userguide/what-is-ecr.html)とGitHub Actionsを使っています。
 
-構成自体に特殊な要素はありません。
+CloudFrontの後ろにネットワーク、コンテナ、リレーショナルデータベースを配置した構成です。特殊な要素はありませんが、自分でゼロから組んだのは今回が初めてです。
 
-ただ、自分でこの構成を 1 から組んだのは今回が初めてです。
+## CloudFrontからRDSまで、リクエスト経路を辿る
 
-生身のネットワークと、生身のコンテナと、生身のリレーショナルデータベースが、CloudFront の後ろに並んでいるだけです。
+この章では、ユーザーのリクエストがCloudFrontからRDSまで届く経路を順に追います。
 
-## CloudFront から RDS まで、リクエスト経路を辿る
+CloudFrontを入口に置いた判断そのものは別の章にまとめたので、ここでは経路の話に絞ります。
 
-この章では、ユーザーのリクエストが CloudFront から RDS まで届く経路を順に追います。
+ViewerからCloudFrontまではHTTPSです。CloudFrontから内部ALB、内部ALBからECS taskまではHTTPで通信します。
 
-CloudFront を入口に置いた判断そのものは別の章にまとめたので、ここでは経路の話に絞ります。
+[CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html)側の設定はcaching disabled、[origin request policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html)は`ALL_VIEWER_EXCEPT_HOST_HEADER`を選んでいます。
 
-Viewer から CloudFront までは HTTPS、CloudFront から内部 ALB と、ALB から ECS task までは HTTP です。
+origin request policyは、CloudFrontが受け取ったリクエストのうち、どのヘッダやクエリをoriginへ引き渡すかを決める設定です。
 
-[CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html) 側の設定は caching disabled、[origin request policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html) は `ALL_VIEWER_EXCEPT_HOST_HEADER` を選んでいます。
+以降、subnetやSGへの内向きの通信許可をingress、外向きの通信をegressと書きます。
 
-origin request policy は、CloudFront が受け取ったリクエストのうち、どのヘッダやクエリを origin へ引き渡すかを決める設定です。
+VPCを3層のsubnetに分けています。
 
-以降、subnet や SG への内向きの通信許可を ingress、外向きの通信を egress と書きます。
-
-VPC を 3層の subnet に分けています。
-
-- public subnet：NAT Gateway を置いて、app private subnet からの egress（ECR image pull、CloudWatch Logs）を出している
-- app private subnet：ECS Fargate task と内部 ALB
+- public subnet：NAT Gatewayを置いて、app private subnetからのegress（ECR image pull、CloudWatch Logs）を出している
+- app private subnet：ECS Fargate taskと内部ALB
 - db isolated subnet：RDS MySQL
 
 ```mermaid
@@ -121,30 +115,32 @@ flowchart TB
   ECS -. "egress" .-> NAT
 ```
 
-Security Group の ingress は CloudFront の managed prefix list → ALB → ECS task → RDS の順で連鎖させています。
+Security GroupのingressはCloudFrontのmanaged prefix list → ALB → ECS task → RDSの順で連鎖させています。
 
-[managed prefix list](https://docs.aws.amazon.com/vpc/latest/userguide/working-with-aws-managed-prefix-lists.html) は、CloudFront の送信元 IP レンジの集合を AWS 側が管理と更新をしてくれるリストで、SG の許可元としてそのまま指定できます。
+[managed prefix list](https://docs.aws.amazon.com/vpc/latest/userguide/working-with-aws-managed-prefix-lists.html)は、CloudFrontの送信元IPレンジをAWSが管理・更新するリストです。SGの許可元としてそのまま指定できます。
 
-自分は CloudFront が ingress の起点になるという意識をこれまで一度も持ったことがなかったので、ALB の SG inbound に [CloudFront の managed prefix list](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/LocationsOfEdgeServers.html) を入れる部分で一度止まりました。最初は ALB の inbound 設定なしで CloudFront から流したところ、504 が返ってきました。prefix list ID を `pl-...` で固定せず、`com.amazonaws.global.cloudfront.origin-facing` の名前で CDK lookup させて inbound に入れたら通りました。
+CloudFrontがingressの起点になるとは、それまで一度も意識していませんでした。そのため、ALBのSG inboundに[CloudFrontのmanaged prefix list](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/LocationsOfEdgeServers.html)を設定するところで一度つまずきました。
 
-ECS task の image は ECR から pull します。
+最初はALBのinboundを設定せずにCloudFrontからリクエストを送ったところ、504が返ってきました。`com.amazonaws.global.cloudfront.origin-facing`という名前でCDK lookupを行い、取得したprefix list IDをinboundに設定したら通信できました。IDを`pl-...`で固定する形にはしていません。
 
-ECS task が必要とする設定値は、性質ごとに置き場所を分けました。`SPRING_PROFILES_ACTIVE` と JDBC URL は SSM Parameter Store に置き、DB の username と password は Secrets Manager（RDS が自動生成したもの）から、Cognito の URL と Client ID は CDK 上で env として直接渡しています。
+ECS taskのimageはECRからpullします。
+
+ECS taskが必要とする設定値は、性質ごとに置き場所を分けました。`SPRING_PROFILES_ACTIVE`とJDBC URLはSSM Parameter Storeに置いています。DBのusernameとpasswordは、RDSが自動生成したSecrets Managerのシークレットから読み込みます。CognitoのURLとClient IDは、CDK上で環境変数として直接渡しています。
 
 個人で動かす検証環境なので、サイズは最小にしました。
 
-- RDS：`db.t4g.micro`
+- RDSは`db.t4g.micro`
 - ECS task：0.5 vCPU / 1 GB
 - ECR image retention：2世代
 - CloudWatch Logs retention：7日
 
-これで開発期間 2週間のあいだ AWS 料金は合計 5ドル程度に収まりました。
+これで開発期間2週間のあいだAWS料金は合計5ドル程度に収まりました。
 
-## CDK Stack を、立てっぱなしの側と必要なときだけ立てる側に分ける
+## CDK Stackを、立てっぱなしの側と必要なときだけ立てる側に分ける
 
-5ドルで済んだのは、CDK Stack を「立てっぱなしの側」と「必要なときだけ立てる側」に最初から分けたからです。
+5ドルで済んだのは、CDK Stackを「立てっぱなしの側」と「必要なときだけ立てる側」に最初から分けたからです。
 
-アプリを触らない時間帯は、料金が乗る部分だけ destroy で消せるようにしておきたかったので、Stack の境界をその基準で切りました。
+アプリを触らない時間帯は、料金がかかる部分だけdestroyで削除できるようにしたかったので、それを基準にStackを分けました。
 
 ```mermaid
 flowchart TB
@@ -169,29 +165,35 @@ flowchart TB
   Registry -. "props" .-> AppRuntime
 ```
 
-立てっぱなしの側は VPC、IAM の OIDC、SSM、Secrets Manager、ECR、CloudWatch Logs、Cognito です。
+立てっぱなしの側はVPC、IAMのOIDC、SSM、Secrets Manager、ECR、CloudWatch Logs、Cognitoです。
 
-これらは存在しているだけでは料金がほぼ発生しません（厳密には Secrets Manager の secret 数や ECR の image 容量で多少出ますが、ほぼ無視できる額です）。
+これらは存在しているだけでは料金がほぼかかりません。Secrets Managerのシークレット数やECRのイメージ容量に応じた料金は多少かかりますが、ほぼ無視できる額です。
 
-立てっぱなしにしておくと確認サイクルが速く、毎回作り直すと OIDC Provider や Cognito User Pool の sub が変わって設定が崩れるので、これらは触らない側に寄せました。sub は Cognito がユーザーごとに発行する不変の ID で、User Pool を作り直すと同じユーザーでも別の値になります。
+これらを残しておくと、動作確認のサイクルが短くなります。毎回作り直すとOIDC ProviderやCognito User Poolのsubが変わり、設定が合わなくなるため、立てっぱなしの側に置きました。
 
-必要なときだけ立てる側は RDS、NAT、CloudFront、ECS、ALB です。
+subはCognitoがユーザーごとに発行する不変のIDです。User Poolを作り直すと、同じユーザーでも別の値になります。
 
-動作確認したいときだけ deploy して、確認が終わったら destroy する運用にしています。
+必要なときだけ立てる側はRDS、NAT、CloudFront、ECS、ALBです。
 
-deploy は `app-deploy-dev` workflow を手動 dispatch して、`confirm_runtime_deploy` を true にして起動します。workflow は DataStack、EgressStack、EdgeStack、AppRuntimeStack を順に deploy したあと、ECS service stable を待ち、CloudFront 経由で `/actuator/health` が 200 を返すまで 10回までリトライして確認します。destroy は手元から逆順に流します。
+動作確認したいときだけdeployして、確認が終わったらdestroyする運用にしています。
 
-RDS（DataStack）も必要なときだけ立てる側に置いている点は、最初は迷いました。普通に考えると RDS はデータが乗るので残したくなりますが、立てっぱなし側に置くと月額がそのぶん乗り続けます。WorkOps の AWS dev は確認データを永続させる目的の DB ではないと割り切り、Flyway migration V1 〜 V8 と `db/seed/aws-dev` の seed で毎回ゼロから再構築する設計にしました。[Flyway](https://documentation.red-gate.com/fd) は、SQL ファイルに版番号を付け、どこまで適用済みかを DB 側に記録するマイグレーションツールです。seed は動作確認用の初期データを流し込む SQL を指しています。`db/seed/aws-dev` の `V6__insert_users.sql` は `cognito_sub` を NULL で seed しておき、実際の Cognito 連携時に WorkOps の管理導線から `AdminCreateUser` で書き戻します。これで DataStack も destroy 対象に置けて、立てっぱなし側の月額をほぼゼロに保てています。
+deployは`app-deploy-dev` workflowで`confirm_runtime_deploy`をtrueにして、手動で起動します。workflowはDataStack、EgressStack、EdgeStack、AppRuntimeStackを順にdeployします。その後、ECS serviceが安定するのを待ち、CloudFront経由で`/actuator/health`が200を返すか確認します。確認は最大10回までリトライします。destroyは手元から逆順に実行します。
 
-CDK の entrypoint は単一の `bin/cdk.ts` で全 Stack を定義しています。立てっぱなし／必要なときだけの境界は、GitHub Actions の workflow 側で deploy 対象 Stack を明示することで実現しています。
+RDS（DataStack）を必要なときだけ立てる側に置くかは、最初は迷いました。データを保存するRDSは残したくなりますが、立てっぱなしにすると毎月の料金がかかり続けます。WorkOpsのAWS devでは、Flyway migration V1〜V8と`db/seed/aws-dev`のseedで毎回ゼロから再構築する設計にしました。確認データを永続させるためのDBではないと割り切っています。
 
-- `infra-dev` workflow：FoundationStack、SecretStack、ConfigStack、IdentityStack、RegistryStack、LogsStack を deploy（CI 後に自動）
-- `app-deploy-dev` workflow：DataStack、EgressStack、EdgeStack、AppRuntimeStack を deploy（手動 dispatch）
-- GitHub Actions OIDC の Role を持つ DeployStack だけは最初の 1回、手元から deploy しています
+[Flyway](https://documentation.red-gate.com/fd)は、SQLファイルに版番号を付け、どこまで適用済みかをDB側に記録するマイグレーションツールです。seedは、動作確認用の初期データを投入するSQLを指しています。
 
-[OIDC 連携](https://docs.github.com/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)は、GitHub Actions に AWS のアクセスキーを持たせず、workflow の実行時だけ一時的な認証情報を受け取らせる仕組みです。
+`db/seed/aws-dev`の`V6__insert_users.sql`では、`cognito_sub`をNULLで初期化します。実際のCognito連携時に、WorkOpsの管理導線から`AdminCreateUser`を使って書き戻します。これでDataStackもdestroyの対象にでき、立てっぱなしの側の月額をほぼゼロに保てています。
 
-workflow は AssumeRoleWithWebIdentity で DeployStack の Role を引き受けてから deploy します。
+CDKのentrypointは単一の`bin/cdk.ts`で、すべてのStackを定義しています。GitHub Actionsのworkflowでdeploy対象のStackを明示し、立てっぱなしの側と必要なときだけ立てる側を分けています。
+
+- `infra-dev` workflow：FoundationStack、SecretStack、ConfigStack、IdentityStack、RegistryStack、LogsStackをdeploy（CI後に自動）
+- `app-deploy-dev` workflow：DataStack、EgressStack、EdgeStack、AppRuntimeStackをdeploy（手動dispatch）
+- GitHub Actions OIDCのRoleを持つDeployStackだけは最初の1回、手元からdeployしています
+
+[OIDC連携](https://docs.github.com/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)は、GitHub ActionsにAWSのアクセスキーを持たせず、workflowの実行時だけ一時的な認証情報を受け取らせる仕組みです。
+
+workflowはAssumeRoleWithWebIdentityでDeployStackのRoleを引き受けてからdeployします。
 
 ```mermaid
 flowchart TB
@@ -208,33 +210,37 @@ flowchart TB
   WF2 -. "AssumeRoleWithWebIdentity" .-> role
 ```
 
-SG の本体は FoundationStack に置きましたが、ingress rule は通信要件を持つ Stack の側に寄せました。CloudFront prefix list から ALB SG への HTTP 80 許可は EdgeStack、ALB SG から ECS task SG への 8080 許可は AppRuntimeStack の `CfnSecurityGroupIngress`、ECS task SG から DB SG への 3306 許可は DataStack。Stack 分離の境界と SG 通信要件の境界を一致させると、必要なときだけ立てる側を destroy しても、立てっぱなし側の SG に runtime 通信用の inbound rule が残らずに済みます。
+SG本体はFoundationStackに置き、ingress ruleは通信要件を持つStackで定義しました。CloudFront prefix listからALB SGへのHTTP 80の許可はEdgeStackで設定します。ALB SGからECS task SGへの8080の許可は、AppRuntimeStackの`CfnSecurityGroupIngress`で設定します。ECS task SGからDB SGへの3306の許可はDataStackで設定します。
 
-ここから、Stack 分離を入れたからこそ出会ったハマりが 2 件あります。
+Stackの分け方とSGの通信要件を揃えることで、必要なときだけ立てる側をdestroyしたときに、立てっぱなしの側のSGにruntime通信用のinbound ruleが残らずに済みます。
 
-### Custom Resource Provider が暗黙に作る LogGroup の残骸
+Stackを分けたことで、次の2つの問題にもつまずきました。
 
-CDK で [Custom Resource](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.custom_resources-readme.html) を書くと、内側で Lambda Provider が動いて、その Lambda が CloudWatch Logs に LogGroup を作ります。
+### Custom Resource Providerが暗黙に作るLogGroupが残る
 
-この LogGroup は Custom Resource の Stack に紐づいて作られるはずなのですが、Stack を destroy しても LogGroup が消えませんでした。
+CDKで[Custom Resource](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.custom_resources-readme.html)を書くと、内部でLambda Providerが動き、そのLambdaがCloudWatch LogsにLogGroupを作ります。
 
-`RemovalPolicy.DESTROY` を立てている認識だったので、消えると思っていました。
+このLogGroupはCustom ResourceのStackに紐づいて作られるはずなのですが、StackをdestroyしてもLogGroupが消えませんでした。
 
-調べると、Provider が暗黙に作る LogGroup は CDK の `RemovalPolicy` 経路に乗っていないようでした。
+`RemovalPolicy.DESTROY`を設定しているつもりだったので、削除されると思っていました。
 
-LogGroup を Provider と同じ Stack 内で明示的に作って、[Provider に `logGroup` で渡す形](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.custom_resources.Provider.html)に直したら、Stack の destroy で LogGroup も一緒に消えるようになり、残骸が増えなくなりました。LogGroup は Provider 用と、Custom Resource の実体である Lambda 用の 2つを別々に作って、それぞれの construct に渡しています。
+調べると、Providerが暗黙に作るLogGroupには、CDKの`RemovalPolicy`が適用されていないようでした。
 
-### Stack 間参照を `ImportValue` でやると壊せない
+LogGroupをProviderと同じStack内で明示的に作り、[Providerに`logGroup`で渡す形](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.custom_resources.Provider.html)に直しました。これでStackのdestroy時にLogGroupも削除されるようになり、不要なLogGroupが増えなくなりました。
 
-Stack 間で値を渡すと、CDK は標準では [`Fn::ImportValue`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-importvalue.html) を使います。
+LogGroupはProvider用と、Custom Resourceの実体であるLambda用の2つを別々に作り、それぞれのconstructに渡しています。
 
-これだと、参照されている側の Stack を消そうとした時点で「他の Stack が export を使っている」と怒られて destroy できません。
+### `ImportValue`で参照されているStackを削除できない
 
-必要なときだけ立てる側の Stack を destroy するたびに引っかかりました。
+Stack間で値を渡すと、CDKは標準では[`Fn::ImportValue`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/intrinsic-function-reference-importvalue.html)を使います。
 
-`defaultCrossStackReferences: weak` を立てたうえで、依存値は props で渡し、CloudFormation 側では [`Fn::GetStackOutput`](https://aws.amazon.com/blogs/devops/simplify-cross-account-and-cross-region-stack-output-references-with-aws-cloudformation-and-cdks-new-fngetstackoutput/) で読む形に変えて抜けました。
+参照されている側のStackを削除しようとすると、「他のStackがexportを使っている」というエラーが出てdestroyできません。
 
-ImportValue を経由しなくなったので、destroy 時の引っ張りが消えました。
+必要なときだけ立てる側のStackをdestroyするたびに引っかかりました。
+
+`defaultCrossStackReferences: weak`を設定し、依存する値はpropsで渡すようにしました。CloudFormation側では[`Fn::GetStackOutput`](https://aws.amazon.com/blogs/devops/simplify-cross-account-and-cross-region-stack-output-references-with-aws-cloudformation-and-cdks-new-fngetstackoutput/)で読む形に変えたところ、削除できるようになりました。
+
+ImportValueを使わなくなったことで、参照によってdestroyが制限される問題を解消できました。
 
 ```mermaid
 flowchart TB
@@ -248,67 +254,59 @@ flowchart TB
     end
 ```
 
-## 個人検証環境で削った構成判断
+## 個人検証環境で省いた構成
 
-開発期間 2週間で AWS 料金が合計 5ドル程度に収まったのは、個人検証環境という前提を理由に、本番なら入れる構成要素を最初から削ったからでした。
+開発期間2週間でAWS料金が合計5ドル程度に収まったのは、個人検証環境なので、本番なら入れる構成要素を最初から省いたためでもあります。
 
-削った項目を、本番に戻す想定とあわせて並べます。
+省いた項目と、本番で使う場合の想定をまとめます。
 
-- **RDS の Multi-AZ**：DataStack の MySQL は singleAZ、`db.t4g.micro`、20 GB gp2 です。検証データを毎回 Flyway で作り直す前提なので冗長性を捨てました。本番では Multi-AZ にするか、Aurora Serverless v2 に置き換えます。
-- **独自ドメインと ACM 証明書、Route 53**：取りません。CloudFront default domain がそのまま HTTPS 入口になるので、ドメイン取得と DNS 設定、ACM 発行の経路を丸ごと省きました。
-- **WAF**：CloudFront の前段に WAF を挟んでいません。攻撃面を持たない検証環境なので入れていません。独自ドメイン化と一緒に、AWS WAF をマネージドルールで紐付けます。
-- **NAT Gateway の冗長化**：EgressStack の NAT は 1つだけで、public subnet[0] にしか置いていません。app private subnet が 2 AZ にあるので、片方の AZ がダウンしたときは ECR からの image pull が落ちます。本格運用では各 AZ に 1つずつ置きます。
-- **ALB の HTTPS listener**：内部 ALB は HTTP 80 だけで listener を持っています。CloudFront → 内部 ALB の VPC origin が HTTP なので、ALB に証明書を入れていません。
-- **ECS Service の Auto Scaling**：desiredCount は 1 固定です。検証中に同時アクセスが増える状況がないので、1 task で十分です。
-- **CloudWatch Logs と ECR の保持期間**：Logs retention は 7日、ECR の tagged image は 2世代、untagged は 1日で削除しています。
+**RDSのMulti-AZ**は使っていません。DataStackのMySQLはsingleAZ、`db.t4g.micro`、20 GB gp2です。検証データを毎回Flywayで作り直す前提なので、冗長化は省きました。本番ではMulti-AZにするか、Aurora Serverless v2に置き換えます。
 
-これらは「立てっぱなしの側」と「必要なときだけ立てる側」の Stack 分離方針と組み合わさって、立てっぱなしの側はほぼ料金がかからない構成になりました。
+**独自ドメインとACM証明書、Route 53**も使っていません。CloudFrontのdefault domainがそのままHTTPSの入口になるので、ドメイン取得、DNS設定、ACM証明書の発行を省きました。
 
-立てっぱなしの側に残る IAM Role、Cognito User Pool、SSM Parameter Store、Secrets Manager、ECR、CloudWatch LogGroup は、いずれもアイドル時の課金がほぼゼロです。
+**WAF**はCloudFrontの前段に設定していません。攻撃面を持たない検証環境なので省きました。独自ドメイン化とあわせて、AWS WAFをマネージドルールで紐付けます。
 
-secret の本数が少なく、ECR の image 容量も小さく、Cognito の MAU も検証中はゼロに近いので、立てっぱなしでも月額の見えるラインに乗りません。
+**NAT Gatewayの冗長化**も省きました。EgressStackのNATは1つだけで、public subnet[0]に置いています。app private subnetは2 AZにあるため、片方のAZがダウンするとECRからのイメージ取得が失敗します。本格運用では各AZに1つずつ置きます。
 
-2週間で 5ドル、の内訳は、必要なときだけ立てる側を deploy していた時間に NAT Gateway と RDS と ECS task と ALB が乗っていた分、と整理できます。
+**ALBのHTTPS listener**は使っていません。内部ALBのlistenerはHTTP 80だけです。CloudFront → 内部ALBのVPC originがHTTPなので、ALBに証明書を設定していません。
 
-## CloudFront を CDN 入口に置いた選択
+**ECS ServiceのAuto Scaling**は設定せず、desiredCountを1に固定しています。検証中に同時アクセスが増える状況がないので、1 taskで十分です。
 
-CloudFront を入口に置いた理由は 1つではありません。
+**CloudWatch LogsとECRの保持期間**は短くしています。ログは7日間、ECRのtagged imageは2世代まで保持し、untagged imageは1日で削除しています。
 
-入口の形は CDN に揃えることにしました。
+構成の省略とStackの分離を組み合わせたことで、立てっぱなしの側はほぼ料金がかからない構成になりました。
 
-業界一般の Webサーバー構成では、CDN として CloudFront を入口に置くのが標準的な並びです。
+立てっぱなしの側に残るIAM Role、Cognito User Pool、SSM Parameter Store、Secrets Manager、ECR、CloudWatch LogGroupは、いずれもアイドル時の課金がほぼゼロです。
 
-配信負荷分散や Edge キャッシュを今は使わない検証構成でも、入口の形だけ標準に揃えておくと、後段に WAF を挟む、Origin Shield を有効にする、別 origin を追加する、Lambda@Edge を入れる、といった拡張がそのまま選択肢に乗ります。
+シークレットの数が少なく、ECRのイメージ容量も小さいうえ、検証中のCognitoのMAUもゼロに近いため、立てっぱなしでも毎月の料金はほぼ無視できる額です。
 
-HTTPS 入口は CloudFront default domain でそのまま成立します。
+2週間で5ドル程度かかった内訳は、必要なときだけ立てる側をdeployしていた時間にNAT Gateway、RDS、ECS task、ALBにかかった分、と整理できます。
 
-CloudFront の default domain は `*.cloudfront.net` の形で、ACM 証明書を別途用意しなくても CloudFront 側で HTTPS が立ちます。
+## CloudFrontを入口に置いた理由
 
-独自ドメインを取らない個人検証環境では、この default domain がそのまま入口になりました。
+入口は、CDNであるCloudFrontに揃えることにしました。業界一般のWebサーバー構成では、CloudFrontを入口に置くのが標準的な並びです。
 
-ACM 発行と Route 53 の設定、ALB の HTTPS listener と証明書差し替えを丸ごと省けました。
+検証構成では配信の負荷分散やEdgeキャッシュは使っていません。それでも入口を標準的な形に揃えておくと、WAFの追加、Origin Shieldの有効化、別originの追加、Lambda@Edgeの導入といった拡張を選べます。
 
-internal ALB を public に出さずに済むのも、CloudFront を入口に置いた効果でした。
+CloudFrontのdefault domainは、そのままHTTPSの入口になります。`*.cloudfront.net`という形式で、ACM証明書を別途用意する必要はありません。
 
-CloudFront には [VPC origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html) の機能があり、CloudFront から直接 private subnet の内部 ALB に到達できます。
+独自ドメインを取得しない個人検証環境では、このdefault domainを入口にしました。ACM証明書の発行、Route 53の設定、ALBのHTTPS listenerと証明書の差し替えを省けました。
 
-これがあるので、ALB を public に出さずに app private subnet に閉じたまま外からのリクエストを受けられます。
+CloudFrontの[VPC origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)を使うと、private subnetの内部ALBに直接到達できます。そのため、ALBをapp private subnetに置いたまま、外からのリクエストを受けられます。
 
-ALB を public にした構成と比べて、ALB の SG inbound に CloudFront prefix list だけを許可する形にできて、ALB がインターネットに直接さらされません。
+ALBのSG inboundにはCloudFront prefix listだけを許可しています。ALBをpublicにした構成と比べて、インターネットに直接さらさずに済みます。
 
-CloudFront を入口にした副作用として、Cognito Hosted UI の戻り先周りで詰まった箇所が 2つあります。
+CloudFrontを入口にしたことで、Cognito Hosted UIの戻り先の設定には2か所でつまずきました。
 
-[Hosted UI](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html) は、Cognito が用意するログイン画面をそのまま借りられる機能で、ログイン後は App Client に登録した callback URL へ戻ってきます。
+[Hosted UI](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html)は、Cognitoが用意するログイン画面を使える機能です。ログイン後はApp Clientに登録したcallback URLへ戻ります。
 
-### Cognito callback URL と CloudFront ドメインの循環依存
+### Cognito callback URLとCloudFrontドメインの循環依存
 
-Cognito の App Client の callback URL に CloudFront のドメインを入れたいのに、その CloudFront 側の deploy には Cognito の Hosted UI URL が要る、という循環依存が発生しました。
+CognitoのApp Clientのcallback URLにCloudFrontのドメインを入れたいのに、そのCloudFront側のdeployにはCognitoのHosted UI URLが要る、という循環依存が発生しました。
 
-CloudFront のドメインは Distribution が deploy された時点でないと確定しません。
+CloudFrontのドメインは、Distributionをdeployした時点で確定します。それまではCognitoのcallback URLに設定する文字列が分かりません。
 
-Cognito 側で先に callback URL を確定させたくても、CloudFront を deploy するまでは入れる文字列がない、という状態です。
-
-最初は placeholder の callback URL（`https://example.com/` のようなダミー）で Cognito を deploy しておき、CloudFront の deploy 後に EdgeStack の Custom Resource で実際の CloudFront ドメインを書き戻す、という二段にして抜けました。
+最初は`https://example.com/`のような仮のcallback URLでCognitoをdeployします。その後、CloudFrontのdeployが終わったら、EdgeStackのCustom Resourceで実際のCloudFrontドメインを書き戻します。この2段階に分けて解決しました。
 
 ```mermaid
 sequenceDiagram
@@ -322,19 +320,19 @@ sequenceDiagram
     CR->>Cognito: UpdateUserPoolClient で実際の URL を書き戻し
 ```
 
-書き戻す側は EdgeStack 内の Custom Resource Lambda で、`UpdateUserPoolClient` API を呼び出します。
+書き戻す側はEdgeStack内のCustom Resource Lambdaで、`UpdateUserPoolClient` APIを呼び出します。
 
-運営側用と企業テナント側用の 2つの App Client に対して、それぞれ `https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant` の URL を組み立てて書き込んでいます。運営側用は `/platform`、企業テナント側用は `/tenant` で受ける形です。
+運営側用と企業テナント側用の2つのApp Clientに対して、それぞれ`https://<distribution-domain>/login/oauth2/code/platform`、`/login/oauth2/code/tenant`のURLを組み立てて書き込んでいます。運営側用は`/platform`、企業テナント側用は`/tenant`で受ける形です。
 
-Custom Resource は Create と Update のときだけ書き戻して、Delete のときは何もしません。
+Custom ResourceはCreateとUpdateのときだけ書き戻して、Deleteのときは何もしません。
 
-EdgeStack を destroy するときに callback URL をまた placeholder に戻してしまうと、次に EdgeStack を立て直すまでのあいだ Cognito の Hosted UI が壊れた状態で残るので、Delete では最後に書き込んだ URL をそのまま残す形にしました。
+EdgeStackをdestroyするときにcallback URLを仮の値へ戻してしまうと、次にEdgeStackを立て直すまでCognitoのHosted UIが使えない状態で残ります。そのため、Deleteでは最後に書き込んだURLをそのまま残す形にしました。
 
-### Cognito から戻ると URL が ALB の内部 DNS 名になる
+### Cognitoから戻るとURLがALBの内部DNS名になる
 
-Cognito Hosted UI でログインしたあと、リダイレクトされた先のページから次のページに遷移しようとすると、絶対 URL が ALB の内部 DNS 名になっていて、ブラウザから到達できませんでした。
+Cognito Hosted UIでログインしたあと、リダイレクトされた先のページから次のページに遷移しようとすると、絶対URLがALBの内部DNS名になっていて、ブラウザから到達できませんでした。
 
-原因は、Spring Security が OAuth2 ログイン後のリダイレクトで絶対 URL を返していて、その絶対 URL の host が Request の Host ヘッダではなく ALB の内部 DNS 名から組み立てられていたためでした。
+Spring SecurityがOAuth2ログイン後のリダイレクトで返す絶対URLのhostを、ALBの内部DNS名から組み立てていたことが原因でした。RequestのHostヘッダは使われていませんでした。
 
 ```mermaid
 flowchart LR
@@ -344,17 +342,21 @@ flowchart LR
     APP -->|"絶対 URL の host が<br>ALB 内部 DNS 名になる"| B
 ```
 
-CloudFront → 内部 ALB の VPC origin は HTTPS から HTTP に降りるので、`X-Forwarded-Proto` と `X-Forwarded-Host` の扱いが絡みます。
+ViewerからCloudFrontまではHTTPS、CloudFrontから内部ALBのVPC originまではHTTPのため、`X-Forwarded-Proto`と`X-Forwarded-Host`の扱いが関係します。
 
-Spring Boot 側で `server.tomcat.use-relative-redirects=true` を立てて、絶対 URL ではなく相対 URL を返すようにしたら抜けました。
+Spring Boot側で`server.tomcat.use-relative-redirects=true`を設定し、相対URLを返すようにしたら解決しました。絶対URLは返さない形です。
 
-relative にすると host を組み立てる必要がなくなるので、Host ヘッダの違いが結果に出ません。
+相対URLならhostを組み立てる必要がないため、Hostヘッダの違いは結果に影響しません。
 
 ## その他、組む途中でハマったこと
 
-### private subnet にいる RDS の中身をどう見るか
+### private subnetにいるRDSの中身をどう見るか
 
-RDS は db isolated subnet に置いていて、手元の MySQL クライアントから直接は届きません。EC2 踏み台を立てるか、SSM port forwarding を経由するか、いくつかやり方を見たうえで、今回は AWS Console の RDS 画面に出る「[CloudShell VPC environment](https://docs.aws.amazon.com/cloudshell/latest/userguide/creating-vpc-environment.html) で接続」を使うことにしました。RDS Console から CloudShell VPC environment を起動すると、VPC 内に CloudShell 用の ENI が建ち、そこに `mysql` クライアントが入った環境で `USE workops;` まで通せました。ENI は VPC 内に作られる仮想のネットワークインターフェースで、これを通じて CloudShell から VPC 内のリソースへ到達できます。DataStack 側に CloudShell VPC environment 専用の SG を別途用意して、self-referencing で MySQL 3306 を通したうえで RDS にぶら下げています。確認が終わったら CloudShell VPC environment は削除します。
+RDSはdb isolated subnetに置いているため、手元のMySQLクライアントからは直接接続できません。EC2の踏み台やSSM port forwardingなどを調べ、今回はAWS ConsoleのRDS画面にある「[CloudShell VPC environment](https://docs.aws.amazon.com/cloudshell/latest/userguide/creating-vpc-environment.html)で接続」を使うことにしました。
+
+RDS ConsoleからCloudShell VPC environmentを起動すると、VPC内にCloudShell用のENIが作られます。`mysql`クライアントが入った環境から接続し、`USE workops;`まで実行できました。ENIは仮想のネットワークインターフェースです。これを通じて、CloudShellからVPC内のリソースへ到達できます。
+
+DataStackにはCloudShell VPC environment専用のSGを用意し、self-referencingでMySQL 3306の通信を許可したうえで、RDSに割り当てています。確認が終わったらCloudShell VPC environmentは削除します。
 
 ```mermaid
 flowchart LR
@@ -365,11 +367,9 @@ flowchart LR
 
 ## これから足したい部分
 
-個人検証環境として削った構成判断は前の章にまとめました。
+構成そのもの以外では、次の2つを残しています。
 
-ここでは、構成そのもの以外で残しているものを並べます。
-
-- 本番相当の運用監視（CloudWatch Alarm の整備、SNS 通知）
+- 本番相当の運用監視（CloudWatch Alarmの整備、SNS通知）
 - バックアップとリストア手順の検証
 
 ## ソースコード
@@ -378,17 +378,17 @@ flowchart LR
 
 ## 追記
 
-この Web サーバー構成の上に、AWS ネイティブの CI/CD パイプラインを組んだ話も書きました。
+このWebサーバー構成の上に、AWSネイティブのCI/CDパイプラインを組んだ話も書きました。
 
 @[card](https://zenn.dev/kyiwanami/articles/aws-cdk-pipelines-cicd)
 
 ## おわりに
 
-ここまで、触ってこなかった範囲を自分で書いてみたことで、自分で組み立てられるようになりました。
+これまで触ってこなかった範囲を自分で書いてみたことで、Webサーバー構成を自分で組み立てられるようになりました。
 
-ところで、今回の開発は AI をフル活用しました。コーディングはすべてコーディングエージェントに任せていて、自分では 1行も書いていません。
+ところで、今回の開発はAIをフル活用しました。コーディングはすべてコーディングエージェントに任せていて、自分では1行も書いていません。
 
-要件、基本設計、ADR、実装計画は Notion 上で Notion AI と壁打ちして固め、確定したものをコーディングエージェントに渡して実装させる、という進め方です。
+要件、基本設計、ADR、実装計画は、Notion上でNotion AIと相談して固めました。確定した内容をコーディングエージェントに渡し、実装を任せる進め方です。
 
 コードと設定の最終レビューと採否の判断は、自分で行うようにしました。
 
