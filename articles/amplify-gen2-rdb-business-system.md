@@ -146,14 +146,14 @@ erDiagram
 | 観点 | DynamoDB | RDB |
 | --- | --- | --- |
 | 設計の起点 | 重要な[アクセスパターンを先に洗い出し](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-general-nosql-design.html)、それに合わせてキー・インデックス・データの配置を設計 | データの関係を整理して正規化し、SQLでさまざまな検索条件を記述 |
-| 関連データの取得 | テーブル間のJOINは提供しない。[関連データをまとめて保存する設計](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-relational-modeling.html)や、アプリ側での取得・突き合わせを検討 | JOINで複数テーブルを組み合わせ、DB側で条件を判定して結果を返す |
+| リレーションによるデータ取得 | テーブル間のJOINは提供しない。[リレーションを持つデータをまとめて保存する設計](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-relational-modeling.html)や、アプリ側での取得・突き合わせを検討 | JOINで複数テーブルを組み合わせ、DB側で条件を判定して結果を返す |
 | キー・インデックスによる検索 | [Query](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.KeyConditionExpressions.html)はパーティションキーの一致が必須。ソートキーには比較・範囲・begins_withによる前方一致などを指定できる。GSIのQueryも同じ制約 | [WHERE](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SQLtoNoSQL.ReadData.html)やJOINで条件を記述できる。インデックスを利用できるかは、その種類・クエリ・実行計画による |
 | 部分一致・フィルター | [FilterExpression](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.FilterExpression.html)にはcontains等もあるが、読み取り後に適用。GSIを付けても、任意の項目の中間一致を効率よく検索できるわけではない。 | SQLで部分一致を記述できる。ただし、部分一致が通常のインデックスで高速になるとは限らない |
 | 性能の考え方 | 想定したアクセスパターンを効率よく処理し、大量のデータやアクセスに対応する設計。想定外の取得は遅く、高コストになる場合がある | 柔軟な検索が可能。処理量はデータ量・JOIN・インデックス等に左右され、クエリの最適化が必要 |
 | データの保持 | 取得方法に合わせた非正規化やGSIへのデータ保存も含めて、保持量を確認 | 正規化でデータの重複を抑える。インデックス等を含めた保持量を確認 |
 | ページング | Amplify Dataの生成APIはnextToken方式。ページ番号の指定や総ページ数の取得は標準では提供されない | SQLで検索・並べ替え・ページ分割をまとめて扱える。LIMIT・OFFSETで対象ページを取得し、COUNT(*)で総件数を集計できる |
 
-今回のDynamoDB案は、複数の取得結果をフロントで突き合わせ、重複排除・並べ替えを行います。検索結果にページ番号や総件数を付ける場合は、集約したデータを保持し、表示するページを切り出す処理も必要になります。RDB案は、関連するデータを条件にした検索からページ分割までDB側で処理できます。
+今回のDynamoDB案は、複数の取得結果をフロントで突き合わせ、重複排除・並べ替えを行います。検索結果にページ番号や総件数を付ける場合は、集約したデータを保持し、表示するページを切り出す処理も必要になります。RDB案は、リレーション先のデータを条件にした検索からページ分割までDB側で処理できます。
 
 DynamoDBでも[Scan](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Scan.html)やフィルターによる検索は可能です。ただし、読み取った後に絞り込むため、返却件数を減らしても読み取り容量の消費は減りません。
 
@@ -177,7 +177,7 @@ DynamoDBでも[Scan](https://docs.aws.amazon.com/amazondynamodb/latest/developer
 
 ### DynamoDB案：Amplify Data
 
-[関連データの取得](https://docs.amplify.aws/react/build-a-backend/data/data-modeling/relationships/)・突き合わせはフロントに記述します。初期要件での実績保存は既存のLambdaから生成APIを使います。
+[リレーションによるデータ取得](https://docs.amplify.aws/react/build-a-backend/data/data-modeling/relationships/)・突き合わせはフロントに記述します。初期要件での実績保存は既存のLambdaから生成APIを使います。
 
 #### Amplify Dataのモデル定義
 
@@ -262,7 +262,7 @@ const client = generateClient<Schema>({ authMode: "identityPool" });
 
 #### Aurora DSQL
 
-[Aurora DSQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/what-is-aurora-dsql.html)はPostgreSQL互換のSQLを利用できる、AWSのサーバーレスな分散RDBです。JOINやトランザクションで関連データを扱えます。
+[Aurora DSQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/what-is-aurora-dsql.html)はPostgreSQL互換のSQLを利用できる、AWSのサーバーレスな分散RDBです。JOINやトランザクションでリレーションを持つデータを扱えます。
 
 ちなみに、DSQLは「Distributed SQL（分散SQL）」の略です。DynamoDB・S3・MemoryDBと同じJournalという基盤を使っているらしいです。分散DBは一つのデータベースを複数のサーバーで分担して動かし、データを分散・複製して保持する仕組みです。
 
@@ -307,7 +307,7 @@ backend.addOutput({ custom: { blocks_api_url: blocks.apiUrl } });
 
 このTypeScriptファイルはSQL生成とクエリの型に使う定義です。読み込むだけでDBにテーブルが作成・変更されるものではありません。
 
-採用したBlocksのバージョンでは外部キー制約を追加せず、参照IDとJOINで関連を扱います。登録時に参照先の存在を確認します。
+採用したBlocksのバージョンでは外部キー制約を追加せず、参照IDとJOINでリレーションを扱います。登録時に参照先の存在を確認します。
 
 ```typescript
 import { date, index, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
@@ -397,7 +397,7 @@ type Order = typeof orders.$inferSelect & { product: Product | null };
 
 DynamoDB案はこのマスターを品目名・作業者名の検索判定と、品目・工程・作業者の名称表示にも使います。マスターの取得成功後に指図・実績・参加を取得します。
 
-リレーションによる関連データの取得が可能で、作業参加から実績の指図IDを得る処理に利用します。今回の生成APIで関連するデータの名称を条件に指図を絞るには、関連データの取得と突き合わせが必要になります。
+リレーションによるデータ取得が可能で、作業参加から実績の指図IDを得る処理に利用します。今回の生成APIでリレーション先の名称を条件に指図を絞るには、リレーションによるデータ取得と突き合わせが必要になります。
 
 #### DynamoDB案：生成APIでマスターを取得
 
@@ -544,7 +544,7 @@ setOrder(order ? {
 setResults(results);
 ```
 
-#### RDB案：JOINで関連取得
+#### RDB案：JOINでリレーションをたどって取得
 
 ```typescript
 import { eq, getTableColumns } from "drizzle-orm";
@@ -642,7 +642,7 @@ ResultのpersonIdにGSIを追加し、作業者別に実績を取得できるよ
 
 DynamoDB案では継続取得・IDの重複排除・突き合わせを追加し、RDB案では既存SQLに条件を追加します。
 
-#### DynamoDB案：関連データを取得して突き合わせ
+#### DynamoDB案：リレーションをたどって取得し、突き合わせ
 
 ```typescript
 import { client } from "../client";
@@ -732,7 +732,7 @@ const rows = await data().select({
 
 #### DynamoDB案：作業参加モデル
 
-モデルと2本のGSIを追加し、実績・作業者からの関連も定義します。
+モデルと2本のGSIを追加し、実績・作業者からのリレーションも定義します。
 
 ```typescript
 import { a } from "@aws-amplify/backend";
@@ -741,9 +741,9 @@ import { a } from "@aws-amplify/backend";
 personId: a.id(), // 旧作業者ID。当初の必須指定を外す
 minutes: a.integer(), // 旧作業時間。当初の必須指定を外す
 participants: a.hasMany("Participation", "resultId"), // 実績1：参加N
-// 旧personの関連と、既存のGSIは維持。
+// 旧personのリレーションと、既存のGSIは維持。
 
-// Personにも、参加を取得する関連を追加。
+// Personにも、参加を取得するリレーションを追加。
 participants: a.hasMany("Participation", "personId"), // 作業者1：参加N
 
 // 新しい作業参加モデル。
@@ -1094,7 +1094,7 @@ ALTER TABLE "results"
 
 「鈴木」の検索で返ったJSON本文の合計は、DynamoDB案が約1,733KB、RDB案が約453KBでした。同じ1,680指図を得るまでの取得量に差があります。
 
-表の3操作では、RDB案の方が要求数が少なく、応答時間も短い結果でした。DynamoDB案はフロントで関連をたどって突き合わせ、RDB案はDBでJOIN・条件判定するという取得経路の違いがあります。selectionSetで関連データを同じHTTP要求に含めても、内部では関連データの読み取りが発生します。
+表の3操作では、RDB案の方が要求数が少なく、応答時間も短い結果でした。DynamoDB案はフロントでリレーションをたどって突き合わせ、RDB案はDBでJOIN・条件判定するという取得経路の違いがあります。selectionSetでリレーション先のデータを同じHTTP要求に含めても、内部ではそのデータの読み取りが発生します。
 
 ## 7. 最終構成の費用
 
@@ -1173,7 +1173,7 @@ DynamoDB案の保持量はテーブル本体約38.51MB＋GSI約167.10MB、RDB案
 
 ### パフォーマンス効率
 
-**業務や画面の使い勝手に合わせて、関連するデータの項目や複数の条件で検索する今回のケースでは、RDB案の方がパフォーマンス効率に優れる。**
+**業務や画面の使い勝手に合わせて、リレーション先の項目や複数の条件で検索する今回のケースでは、RDB案の方がパフォーマンス効率に優れる。**
 
 応答時間はDynamoDB案がRDB案の最大約30倍で、測定した全条件では、おおむね次の範囲に収まりました。
 
@@ -1218,13 +1218,13 @@ DynamoDB案はスキーマのデプロイ後に、Scan・BatchWriteの移行ス�
 - **動作確認用のプロトタイプや、アクセスパターンが単純で安定している業務には、まだデフォルトのAmplify Dataで済む**
 
   テンプレートとモデル定義から簡易的にDBを簡潔に立ち上げられる点は勝ります。
-必要なデータをキー・インデックス・関連定義で取得しやすければ、本番運用でも有力な選択肢になります。
+必要なデータをキー・インデックス・リレーション定義で取得しやすければ、本番運用でも有力な選択肢になります。
 RDB案に比べれば保守コストも低いです。
 
 - **業務データの関係や検索条件が複雑で変更が続く見込みなら、基本はRDBを選ぶ**
 
   今回のDrizzle＋Blocks＋Aurora DSQL構成では、EXISTSで記述でき、検索条件やデータ間の関係の追加に対応しやすい構成です。
-今回のように関連するデータの項目や複数の条件で検索するケースでは、RDB案の方が応答時間と取得負担を抑えられました。
+今回のようにリレーション先の項目や複数の条件で検索するケースでは、RDB案の方が応答時間と取得負担を抑えられました。
 
 - 運用費と、開発・保守の負担を合わせて判断する
 
