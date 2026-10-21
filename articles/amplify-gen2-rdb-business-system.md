@@ -46,7 +46,7 @@ published: true
 
 ※ちなみに、2024年には既にAurora Serverless v2というサーバーレスDBが登場していましたが、最低料金がありコスト面で採用しませんでした。その反面、DSQLではかなりコストを抑えられます。
 
-AWSが公開したエブリーの事例では、対象ワークロードの試算において、Aurora DSQLのコストはAurora PostgreSQL（Provisioned）比で90%以上低くなっています。
+AWSが公開したエブリーの事例では、対象ワークロードの試算において、Aurora DSQLのコストはAurora Serverless v2比で90%以上低くなっています。
 https://aws.amazon.com/jp/blogs/news/db-customercase-every-dsql/
 
 ### 今回比較する構成
