@@ -3,7 +3,7 @@ title: "Amplify Gen 2で作る業務システム、DynamoDBよりRDBの方が扱
 emoji: "🗄️"
 type: "tech"
 topics: ["aws", "amplify", "dynamodb", "auroradsql", "drizzle"]
-published: false
+published: true
 ---
 
 ## TL;DR
@@ -34,13 +34,13 @@ published: false
 
 本ケースでは大規模な利用に備えることより、複雑な関係や変更を扱うことが重要になります。アクセスパターンが開発中に変わることがDB選定の前提になります。
 
-### RDBを検討したきっかけ
+### コスト問題を解決するDSQLサービスがAWSに登場
 
 これまで、コスト要件に応じてサーバーレスアーキテクチャを採用し、Amplify Gen2というWebアプリケーションフレームワークを使用してきました。Amplifyは、DBとしてDynamoDBを使用しています。
 
-開発する中で、柔軟な検索やモデルの変更が続く業務アプリでは、DynamoDBのキー・インデックス設計や取得処理の変更が負担になり、RDBの方が扱いやすいのではないかと感じていました。
+開発する中で、柔軟な検索やモデルの変更が続く業務アプリでは、DynamoDBのキー・インデックス設計や取得処理の変更が負担になり、RDBの方が扱いやすいのではないかと感じていたものの、コスト要件や運用がネックでした。従量課金であるAurora Serverless v2も最低料金があります。
 
-その中で、処理量に応じた従量課金のAurora DSQLと、Amplify Gen 2と一緒にRDBを定義・デプロイできるAWS Blocksが登場しました。RDBの常時稼働費用や構築の負担を抑えて使えそうだと考えました。
+その中で、処理量に応じた従量課金のAurora DSQLと、Amplify Gen 2と一緒にRDBを定義・デプロイできるAWS Blocksが登場しました。これにより、RDBの常時稼働費用や構築の負担を抑えて使えそうだと考えました。
 
 そこで、Amplify Data＋DynamoDBとDrizzle＋Blocks＋Aurora DSQLで同じ業務アプリを作り、通常利用と要件変更への対応、費用を比較しました。
 
