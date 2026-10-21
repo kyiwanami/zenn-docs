@@ -1252,4 +1252,3 @@ AWS Blocksで[RDBを新規構築する場合](https://github.com/aws-devtools-la
 - DBインスタンスの容量設定が不要で、構築・運用で管理する項目を減らせる。
 
 Postgresの機能を存分に使いたいならAurora Serverless v2も選択肢かと思います。
-[製造指図・作業実績管理システム](https://app.notion.com/p/3fb2a9b8a06f81de9a4ad2a06fd6adf2)
