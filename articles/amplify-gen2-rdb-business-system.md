@@ -1,5 +1,5 @@
 ---
-title: "Amplify Gen 2で作る業務システム、RDBの方が扱いやすいのでは？"
+title: "Amplify Gen 2で作る業務システム、DynamoDBよりRDBの方が扱いやすいのでは？"
 emoji: "🗄️"
 type: "tech"
 topics: ["aws", "amplify", "dynamodb", "auroradsql", "drizzle"]
