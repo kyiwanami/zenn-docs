@@ -38,11 +38,16 @@ published: true
 
 これまで、コスト要件に応じてサーバーレスアーキテクチャを採用し、Amplify Gen2というWebアプリケーションフレームワークを使用してきました。Amplifyは、DBとしてDynamoDBを使用しています。
 
-開発する中で、柔軟な検索やモデルの変更が続く業務アプリでは、DynamoDBのキー・インデックス設計や取得処理の変更が負担になり、RDBの方が扱いやすいのではないかと感じていたものの、コスト要件や運用がネックでした。従量課金であるAurora Serverless v2も最低料金があります。
+開発する中で、柔軟な検索やモデルの変更が続く業務アプリでは、DynamoDBのキー・インデックス設計や取得処理の変更が負担になり、RDBの方が扱いやすいのではないかと感じていました。ただ、コスト要件や運用がネックでした。
 
 その中で、処理量に応じた従量課金のAurora DSQLと、Amplify Gen 2と一緒にRDBを定義・デプロイできるAWS Blocksが登場しました。これにより、RDBの常時稼働費用や構築の負担を抑えて使えそうだと考えました。
 
 そこで、Amplify Data＋DynamoDBとDrizzle＋Blocks＋Aurora DSQLで同じ業務アプリを作り、通常利用と要件変更への対応、費用を比較しました。
+
+※ちなみに、2024年には既にAurora Serverless v2というサーバーレスDBが登場していましたが、最低料金がありコスト面で採用しませんでした。その反面、DSQLではかなりコストを抑えられます。
+
+AWSが公開したエブリーの事例では、対象ワークロードの試算において、Aurora DSQLのコストはAurora PostgreSQL（Provisioned）比で90%以上低くなっています。
+https://aws.amazon.com/jp/blogs/news/db-customercase-every-dsql/
 
 ### 今回比較する構成
 
@@ -1246,9 +1251,9 @@ AWS Blocksで[RDBを新規構築する場合](https://github.com/aws-devtools-la
 | DB機能 | JOIN・トランザクションなどのPostgreSQL互換機能 | PostgreSQLの幅広い機能。トリガーやストアドプロシージャも利用できる |
 | Blocksでの構築 | `DistributedDatabase` | `Database` |
 
-今回は次の点からAurora DSQLを選びました。
+今回は次の点からトレードオフでAurora DSQLを選びました。
 
 - 利用者が数十人で操作のない時間も長いため、処理量に応じた課金が合っている。
 - DBインスタンスの容量設定が不要で、構築・運用で管理する項目を減らせる。
 
-Postgresの機能を存分に使いたいならAurora Serverless v2も選択肢かと思います。
+既存システムとの互換性を重視する場合や、大きなトランザクション、更新競合への対応を重視する場合はAurora Serverless v2が選択肢になりかと思います。
